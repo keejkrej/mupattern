@@ -57,6 +57,6 @@ export const DEFAULT_LATTICE_UM: Lattice = {
 
 export const DEFAULT_PATTERN_UM: PatternConfigUm = {
   lattice: DEFAULT_LATTICE_UM,
-  width: 25,
-  height: 25,
+  width: 50,
+  height: 50,
 }

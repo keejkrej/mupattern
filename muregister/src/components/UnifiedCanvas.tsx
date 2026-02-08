@@ -13,6 +13,7 @@ interface UnifiedCanvasProps {
   onRotate: (deltaRad: number) => void
   sensitivity: number
   onExportYAML?: () => void
+  detectedPoints?: Array<{ x: number; y: number }> | null
 }
 
 export interface UnifiedCanvasRef {
@@ -22,7 +23,7 @@ export interface UnifiedCanvasRef {
 }
 
 export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
-  function UnifiedCanvas({ phaseContrast, canvasSize, imageBaseName, patternPx, transform, onTransformUpdate, onZoom, onRotate, sensitivity, onExportYAML }, ref) {
+  function UnifiedCanvas({ phaseContrast, canvasSize, imageBaseName, patternPx, transform, onTransformUpdate, onZoom, onRotate, sensitivity, onExportYAML, detectedPoints }, ref) {
     const { theme } = useTheme()
     const canvasRef = useRef<HTMLCanvasElement>(null)
     type DragMode = "none" | "pan" | "rotate" | "resize"
@@ -189,7 +190,24 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
 
       // Draw pattern overlay with transform
       drawLattice(ctx, canvas.width, canvas.height, patternPx, transform, "preview")
-    }, [phaseContrast, patternPx, transform, drawLattice, theme])
+
+      // Draw detected grid points as crosses
+      if (detectedPoints && detectedPoints.length > 0) {
+        ctx.save()
+        ctx.strokeStyle = "rgba(0, 255, 100, 0.85)"
+        ctx.lineWidth = 2
+        const arm = 5
+        for (const { x, y } of detectedPoints) {
+          ctx.beginPath()
+          ctx.moveTo(x - arm, y)
+          ctx.lineTo(x + arm, y)
+          ctx.moveTo(x, y - arm)
+          ctx.lineTo(x, y + arm)
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
+    }, [phaseContrast, patternPx, transform, drawLattice, theme, detectedPoints])
 
     useEffect(() => {
       draw()

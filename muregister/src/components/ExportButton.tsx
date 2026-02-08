@@ -11,7 +11,7 @@ export function ExportButton({ onExport, disabled }: ExportButtonProps) {
       onClick={onExport}
       disabled={disabled}
       size="sm"
-      className="flex-1"
+      className="flex-1 h-7 text-base"
     >
       Export
     </Button>

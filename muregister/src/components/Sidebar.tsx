@@ -23,6 +23,10 @@ interface SidebarProps {
   onSensitivityChange: (v: number) => void
   onReset: () => void
   onExport: () => void
+  hasImage: boolean
+  hasDetectedPoints: boolean
+  onDetect: () => void
+  onFitGrid: (basisAngle: number) => void
 }
 
 function Section({
@@ -62,6 +66,10 @@ export function Sidebar({
   onSensitivityChange,
   onReset,
   onExport,
+  hasImage,
+  hasDetectedPoints,
+  onDetect,
+  onFitGrid,
 }: SidebarProps) {
   return (
     <aside className="w-80 flex-shrink-0 overflow-y-auto border-l border-border p-4 space-y-1">
@@ -111,11 +119,40 @@ export function Sidebar({
 
       <Separator />
 
-      <div className="flex gap-2 pt-2">
-        <Button variant="secondary" size="sm" className="flex-1" onClick={onReset}>
-          Reset
+      <div className="space-y-2 pt-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full h-7 text-base"
+          disabled={!hasImage}
+          onClick={onDetect}
+        >
+          Detect cells
         </Button>
-        <ExportButton onExport={onExport} />
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full h-7 text-base"
+          disabled={!hasDetectedPoints}
+          onClick={() => onFitGrid(Math.PI / 2)}
+        >
+          Auto square (a=b)
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full h-7 text-base"
+          disabled={!hasDetectedPoints}
+          onClick={() => onFitGrid(Math.PI / 3)}
+        >
+          Auto hex (a=b)
+        </Button>
+        <div className="flex gap-1.5">
+          <Button variant="secondary" size="sm" className="flex-1 h-7 text-base" onClick={onReset}>
+            Reset
+          </Button>
+          <ExportButton onExport={onExport} />
+        </div>
       </div>
 
     </aside>

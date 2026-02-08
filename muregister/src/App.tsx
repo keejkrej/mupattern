@@ -20,7 +20,11 @@ import {
   setCalibration,
   setSensitivity,
   resetPatternAndTransform,
+  setDetectedPoints,
+  clearDetectedPoints,
 } from "@/store"
+import { detectGridPoints, fitGrid } from "@/lib/autodetect"
+import { pixelsToUm } from "@/lib/units"
 
 /** Convert a data URL to an HTMLImageElement (async). */
 function useImageFromDataURL(dataURL: string | null): HTMLImageElement | null {
@@ -60,6 +64,7 @@ function App() {
   const transform = useStore(appStore, (s) => s.transform)
   const calibration = useStore(appStore, (s) => s.calibration)
   const sensitivity = useStore(appStore, (s) => s.sensitivity)
+  const detectedPoints = useStore(appStore, (s) => s.detectedPoints)
 
   const phaseContrast = useImageFromDataURL(imageDataURL)
 
@@ -80,6 +85,7 @@ function App() {
   const handleImageLoad = useCallback((img: HTMLImageElement, filename: string) => {
     const dataURL = imageToDataURL(img)
     loadImage(dataURL, filename, img.width, img.height)
+    clearDetectedPoints()
   }, [])
 
   const handleExportYAML = useCallback(() => {
@@ -94,6 +100,36 @@ function App() {
 
   const handleExport = useCallback(() => {
     canvasRef.current?.exportAll()
+  }, [])
+
+  const handleDetect = useCallback(() => {
+    if (!phaseContrast) return
+    const points = detectGridPoints(phaseContrast, 5)
+    if (points.length < 3) {
+      alert(`Detection found only ${points.length} point(s) — need at least 3. Try a different image.`)
+    }
+    setDetectedPoints(points)
+  }, [phaseContrast])
+
+  const handleFitGrid = useCallback((basisAngle: number) => {
+    if (!detectedPoints || detectedPoints.length < 3) return
+    const fit = fitGrid(detectedPoints, canvasSize.width, canvasSize.height, basisAngle)
+    if (fit) {
+      updateLattice({
+        a: pixelsToUm(fit.a, calibration),
+        alpha: fit.alpha,
+        b: pixelsToUm(fit.b, calibration),
+        beta: fit.beta,
+      })
+      updateTransform({ tx: fit.tx, ty: fit.ty })
+    } else {
+      alert("Grid fitting failed — no matching lattice directions found. Try the other mode or adjust manually.")
+    }
+  }, [detectedPoints, canvasSize, calibration])
+
+  const handleReset = useCallback(() => {
+    resetPatternAndTransform()
+    clearDetectedPoints()
   }, [])
 
   if (!started) {
@@ -121,6 +157,7 @@ function App() {
           onRotate={rotatePattern}
           sensitivity={sensitivity}
           onExportYAML={handleExportYAML}
+          detectedPoints={detectedPoints}
         />
         <Sidebar
           calibration={calibration}
@@ -133,8 +170,12 @@ function App() {
           onTransformUpdate={updateTransform}
           sensitivity={sensitivity}
           onSensitivityChange={setSensitivity}
-          onReset={resetPatternAndTransform}
+          onReset={handleReset}
           onExport={handleExport}
+          hasImage={!!phaseContrast}
+          hasDetectedPoints={!!detectedPoints && detectedPoints.length > 0}
+          onDetect={handleDetect}
+          onFitGrid={handleFitGrid}
         />
       </div>
     </div>

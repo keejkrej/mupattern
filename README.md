@@ -76,8 +76,9 @@ In the app:
 1. **Load image**: drag-and-drop a TIF/PNG from your position folder
 2. **Set calibration**: pick the objective preset (10x, 20x, 40x) or type µm/pixel
 3. **Configure lattice**: set parameters `a`, `b`, `α`, `β`, and square size to match the micropattern geometry. Use "Square" or "Hex" presets if applicable
-4. **Align**: drag the pattern overlay to align with the image — left-drag to pan, middle-drag to scale, right-drag to rotate
-5. **Export**: click Export to download three files:
+4. **Auto-detect** (optional): click "Detect cells" to find grid points (shown as green crosses), then click "Auto square (a=b)" or "Auto hex (a=b)" to fit the lattice. Works best on clear phase contrast images with regular spacing
+5. **Align**: drag the pattern overlay to fine-tune — left-drag to pan, middle-drag to scale, right-drag to rotate
+6. **Export**: click Export to download three files:
    - `*_bbox.csv` — bounding boxes for each pattern site (`crop,x,y,w,h`)
    - `*_config.yaml` — lattice parameters (for reloading later)
    - `*_mask.png` — binary mask image

@@ -19,6 +19,7 @@ export interface AppState {
   transform: Transform
   calibration: Calibration
   sensitivity: number
+  detectedPoints: Array<{ x: number; y: number }> | null
 }
 
 const defaultState: AppState = {
@@ -30,6 +31,7 @@ const defaultState: AppState = {
   transform: DEFAULT_TRANSFORM,
   calibration: DEFAULT_CALIBRATION,
   sensitivity: 0.5,
+  detectedPoints: null,
 }
 
 export const appStore = createPersistedStore<AppState>("muregister-app", defaultState, {
@@ -145,4 +147,12 @@ export function resetPatternAndTransform() {
     pattern: DEFAULT_PATTERN_UM,
     transform: DEFAULT_TRANSFORM,
   }))
+}
+
+export function setDetectedPoints(points: Array<{ x: number; y: number }>) {
+  appStore.setState((s) => ({ ...s, detectedPoints: points }))
+}
+
+export function clearDetectedPoints() {
+  appStore.setState((s) => ({ ...s, detectedPoints: null }))
 }
