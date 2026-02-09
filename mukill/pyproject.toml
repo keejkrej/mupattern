@@ -1,0 +1,44 @@
+[project]
+name = "mukill"
+version = "0.1.0"
+description = "Train classifiers and analyze kill curves for micropattern experiments"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "zarr>=2.16,<3",
+    "datasets>=3.0",
+    "Pillow>=10.0",
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "transformers>=4.40",
+    "accelerate>=1.1.0",
+    "evaluate>=0.4",
+    "scikit-learn>=1.4",
+]
+
+[project.scripts]
+mukill = "main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }
+torchvision = { index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

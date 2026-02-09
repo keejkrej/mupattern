@@ -1,0 +1,26 @@
+[project]
+name = "mufile"
+version = "0.1.0"
+description = "Microscopy file utilities: crop TIFFs into zarr, convert ND2 to TIFF"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "numpy>=1.26",
+    "tifffile>=2024.1",
+    "zarr>=2.16,<3",
+    "nd2>=0.10",
+]
+
+[project.scripts]
+mufile = "main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

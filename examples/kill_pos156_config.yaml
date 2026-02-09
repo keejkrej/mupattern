@@ -1,0 +1,5 @@
+sources:
+  - zarr: C:\Users\ctyja\data\tcell\crops.zarr
+    pos: 156
+    t_range: [0, 50]
+    crop_range: [0, 125]

@@ -1,0 +1,4 @@
+sources:
+  - zarr: C:\Users\ctyja\data\huh7\crops.zarr
+    pos: 0
+    channel: 1
