@@ -2,7 +2,6 @@
 name = "mufile"
 version = "0.1.0"
 description = "Microscopy file utilities: crop TIFFs into zarr, convert ND2 to TIFF"
-readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
@@ -10,6 +9,10 @@ dependencies = [
     "tifffile>=2024.1",
     "zarr>=2.16,<3",
     "nd2>=0.10",
+    "imageio>=2.31",
+    "imageio-ffmpeg>=0.4",
+    "matplotlib>=3.8",
+    "customtkinter>=5.0",
 ]
 
 [dependency-groups]
@@ -17,6 +20,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 mufile = "main:app"
+mufile-gui = "gui.app:main"
 
 [build-system]
 requires = ["hatchling"]

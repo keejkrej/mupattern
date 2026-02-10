@@ -96,7 +96,6 @@ The bbox CSV is the input for the next step. Repeat for each position if the pat
 If your raw data is in Nikon ND2 format, convert it to per-position TIFF folders first:
 
 ```bash
-cd mufile
 uv run mufile convert /path/to/data.nd2 --pos all --time all --output /path/to/data
 ```
 
@@ -120,7 +119,6 @@ Before writing, the command prints the full list of selected positions and timep
 Cut each pattern site out of every frame and store as a zarr array.
 
 ```bash
-cd mufile
 uv run mufile crop \
   --input /path/to/data \
   --pos 150 \
@@ -192,7 +190,6 @@ sources:
 Run:
 
 ```bash
-cd mukill
 uv run mukill dataset \
   --config /path/to/dataset.yaml \
   --output /path/to/dataset
@@ -205,7 +202,6 @@ This reads every annotated `(t, crop)` pair from the zarr store, normalizes uint
 Fine-tune a pretrained ResNet-18 on your dataset.
 
 ```bash
-cd mukill
 uv run mukill train \
   --dataset /path/to/dataset \
   --output /path/to/model \
@@ -242,8 +238,6 @@ sources:
 Run:
 
 ```bash
-cd mukill
-
 # Using the pretrained model from HuggingFace:
 uv run mukill predict \
   --config /path/to/predict.yaml \
@@ -264,8 +258,6 @@ Output is a CSV in the same `t,crop,label` format as annotations — can be load
 The raw predictions may have "flickering" — a cell classified as absent then present again. Since dead cells can't come back, enforce monotonicity:
 
 ```bash
-cd mukill
-
 # Clean: once absent, stays absent
 uv run mukill clean \
   --input /path/to/predictions.csv \
@@ -302,8 +294,6 @@ sources:
 Run:
 
 ```bash
-cd muspot
-
 # Detect spots
 uv run muspot detect \
   --config /path/to/spots.yaml \
@@ -472,11 +462,11 @@ cd mupattern && bun run dev
 # Run musee
 cd musee && bun run dev
 
-# Run Python CLIs (uv manages virtualenvs automatically)
-cd mufile && uv run mufile --help
-cd mukill && uv run mukill --help
-cd muexpression && uv run muexpression --help
-cd muspot && uv run muspot --help
+# Run Python CLIs from repo root (uv workspace)
+uv run mufile --help
+uv run mukill --help
+uv run muexpression --help
+uv run muspot --help
 ```
 
 ## Tech stack

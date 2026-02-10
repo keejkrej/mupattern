@@ -1,0 +1,9 @@
+[project]
+name = "mupattern"
+version = "0.1.0"
+description = "Micropattern analysis tools"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["mufile", "muexpression", "muspot", "mukill"]

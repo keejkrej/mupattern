@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-import typer
 
-from main import parse_slice_string
+from core import parse_slice_string
 
 
 # ── "all" keyword ────────────────────────────────────────────────────────────
@@ -103,29 +102,29 @@ class TestMixed:
 
 class TestErrors:
     def test_out_of_range_positive(self):
-        with pytest.raises(typer.BadParameter, match="out of range"):
+        with pytest.raises(ValueError, match="out of range"):
             parse_slice_string("10", 10)
 
     def test_out_of_range_negative(self):
-        with pytest.raises(typer.BadParameter, match="out of range"):
+        with pytest.raises(ValueError, match="out of range"):
             parse_slice_string("-11", 10)
 
     def test_step_zero(self):
-        with pytest.raises(typer.BadParameter, match="step cannot be zero"):
+        with pytest.raises(ValueError, match="step cannot be zero"):
             parse_slice_string("0:10:0", 10)
 
     def test_non_integer(self):
-        with pytest.raises(typer.BadParameter, match="Invalid slice segment"):
+        with pytest.raises(ValueError, match="Invalid slice segment"):
             parse_slice_string("abc", 10)
 
     def test_float_value(self):
-        with pytest.raises(typer.BadParameter, match="Invalid slice segment"):
+        with pytest.raises(ValueError, match="Invalid slice segment"):
             parse_slice_string("1.5", 10)
 
     def test_empty_string(self):
-        with pytest.raises(typer.BadParameter, match="produced no indices"):
+        with pytest.raises(ValueError, match="produced no indices"):
             parse_slice_string("", 10)
 
     def test_only_commas(self):
-        with pytest.raises(typer.BadParameter, match="produced no indices"):
+        with pytest.raises(ValueError, match="produced no indices"):
             parse_slice_string(",,,", 10)

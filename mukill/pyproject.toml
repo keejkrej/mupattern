@@ -2,13 +2,11 @@
 name = "mukill"
 version = "0.1.0"
 description = "Train classifiers and analyze kill curves for micropattern experiments"
-readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
     "pandas>=2.0",
     "matplotlib>=3.8",
-    "pyyaml>=6.0",
     "numpy>=1.26",
     "zarr>=2.16,<3",
     "datasets>=3.0",
@@ -19,10 +17,12 @@ dependencies = [
     "accelerate>=1.1.0",
     "evaluate>=0.4",
     "scikit-learn>=1.4",
+    "customtkinter>=5.0",
 ]
 
 [project.scripts]
 mukill = "main:app"
+mukill-gui = "gui.app:main"
 
 [build-system]
 requires = ["hatchling"]

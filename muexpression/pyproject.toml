@@ -10,10 +10,12 @@ dependencies = [
     "pyyaml>=6.0",
     "pandas>=2.0",
     "matplotlib>=3.8",
+    "customtkinter>=5.0",
 ]
 
 [project.scripts]
 muexpression = "main:app"
+muexpression-gui = "gui.app:main"
 
 [build-system]
 requires = ["hatchling"]

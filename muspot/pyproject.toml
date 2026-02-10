@@ -11,10 +11,12 @@ dependencies = [
     "pandas>=2.0",
     "matplotlib>=3.8",
     "spotiflow>=0.5",
+    "customtkinter>=5.0",
 ]
 
 [project.scripts]
 muspot = "main:app"
+muspot-gui = "gui.app:main"
 
 [build-system]
 requires = ["hatchling"]
