@@ -357,10 +357,10 @@ uv run muspot plot \
 
 ![Spot counts Pos9](examples/spot_pos9.png)
 
-- 36 crops (6×6 grid, 154×154 px), 6 timepoints, 3 channels (detection on channel 2)
-- 2216 spots detected across 30 crops (6 crops had zero spots)
-- Most crops show 5–25 spots per frame
-- Slight downward trend over time (possible photobleaching)
+- 36 crops (6×6 grid, 154×154 px), 163 timepoints, channel 2 (fluorescence)
+- 24,547 spots detected across all 36 crops
+- Several crops show a transient burst peaking at t≈30 (60–80 spots), decaying by t≈60
+- Lower-expressing crops remain flat at 5–15 spots throughout
 
 ### Expression — HuH7 Pos0
 
@@ -392,7 +392,6 @@ examples/
   kill_pos156.png                   # kill curve — killing 3D
   spot_pos9_bbox.csv                # Pos9 bounding boxes (spot detection)
   spot_pos9_config.yaml             # muspot detect config for Pos9 (channel 2)
-  spot_pos9_spots.csv               # detected spots (2216 spots, 30 crops, 6 timepoints)
   spot_pos9.png                     # spot count curves — Pos9
   expression_pos0_bbox.csv          # Pos0 bounding boxes (HuH7)
   expression_pos1_bbox.csv          # Pos1 bounding boxes (HuH7)
