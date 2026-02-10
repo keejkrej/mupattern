@@ -19,8 +19,8 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-mufile = "main:app"
-mufile-gui = "gui.app:main"
+mufile = "mufile.cli:app"
+mufile-gui = "mufile.gui:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,4 +30,4 @@ build-backend = "hatchling.build"
 package = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/mufile"]

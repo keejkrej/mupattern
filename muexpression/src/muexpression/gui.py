@@ -8,7 +8,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from core import run_analyze, run_plot
+from .core import run_analyze, run_plot
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
-from core import run_convert, run_crop, run_movie
+from .core import run_convert, run_crop, run_movie
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")

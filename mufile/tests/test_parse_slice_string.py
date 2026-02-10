@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core import parse_slice_string
+from mufile.core import parse_slice_string
 
 
 # ── "all" keyword ────────────────────────────────────────────────────────────

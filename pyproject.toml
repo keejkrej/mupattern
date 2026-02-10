@@ -3,7 +3,21 @@ name = "mupattern"
 version = "0.1.0"
 description = "Micropattern analysis tools"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "mufile",
+    "muexpression",
+    "muspot",
+    "mukill",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
 
 [tool.uv.workspace]
 members = ["mufile", "muexpression", "muspot", "mukill"]
+
+[tool.uv.sources]
+mufile = { workspace = true }
+muexpression = { workspace = true }
+muspot = { workspace = true }
+mukill = { workspace = true }

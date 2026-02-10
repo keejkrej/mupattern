@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 
 import typer
 
-from core import (
+from .core import (
     _read_bbox_csv,
     parse_slice_string,
     run_convert,

@@ -12,7 +12,7 @@ from typing import Annotated
 
 import typer
 
-from core import run_analyze, run_plot
+from .core import run_analyze, run_plot
 
 app = typer.Typer(
     add_completion=False,

@@ -21,8 +21,8 @@ dependencies = [
 ]
 
 [project.scripts]
-mukill = "main:app"
-mukill-gui = "gui.app:main"
+mukill = "mukill.cli:app"
+mukill-gui = "mukill.gui:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -41,4 +41,4 @@ torch = { index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }
 torchvision = { index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/mukill"]

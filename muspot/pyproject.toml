@@ -10,13 +10,15 @@ dependencies = [
     "pyyaml>=6.0",
     "pandas>=2.0",
     "matplotlib>=3.8",
+    "torch>=2.0",
+    "torchvision>=0.15",
     "spotiflow>=0.5",
     "customtkinter>=5.0",
 ]
 
 [project.scripts]
-muspot = "main:app"
-muspot-gui = "gui.app:main"
+muspot = "muspot.cli:app"
+muspot-gui = "muspot.gui:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -25,5 +27,14 @@ build-backend = "hatchling.build"
 [tool.uv]
 package = true
 
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }
+torchvision = { index = "pytorch-cu130", marker = "sys_platform != 'darwin'" }
+
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/muspot"]

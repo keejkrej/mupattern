@@ -13,7 +13,7 @@ from typing import Annotated
 
 import typer
 
-from core import run_detect, run_plot
+from .core import run_detect, run_plot
 
 app = typer.Typer(
     add_completion=False,

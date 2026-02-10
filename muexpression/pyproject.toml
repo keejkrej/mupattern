@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-muexpression = "main:app"
-muexpression-gui = "gui.app:main"
+muexpression = "muexpression.cli:app"
+muexpression-gui = "muexpression.gui:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -25,4 +25,4 @@ build-backend = "hatchling.build"
 package = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/muexpression"]

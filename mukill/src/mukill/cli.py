@@ -15,7 +15,7 @@ from typing import Annotated
 
 import typer
 
-from core import run_clean, run_dataset, run_plot, run_predict, run_train
+from .core import run_clean, run_dataset, run_plot, run_predict, run_train
 
 app = typer.Typer(
     add_completion=False,
@@ -53,7 +53,7 @@ def dataset(
 ) -> None:
     """Create a HuggingFace Dataset from crops.zarr + annotations CSV."""
     try:
-        from core import _load_annotations
+        from .core import _load_annotations
 
         typer.echo(f"Loading pos {pos} from {zarr_path}")
         ann_dict = _load_annotations(annotations)
@@ -198,7 +198,7 @@ def plot(
     ],
 ) -> None:
     """Plot kill curve: number of present cells over time."""
-    from core import _find_violations, _load_csv
+    from .core import _find_violations, _load_csv
 
     df = _load_csv(input)
     n_crops = df["crop"].nunique()
@@ -230,7 +230,7 @@ def clean(
     ],
 ) -> None:
     """Clean predictions by enforcing monotonicity (once absent, stays absent)."""
-    from core import _find_violations, _load_csv
+    from .core import _find_violations, _load_csv
 
     df = _load_csv(input)
     typer.echo(f"Loaded {len(df)} predictions")
