@@ -15,10 +15,10 @@ MCF7 cancer cells adhere to micropatterns printed on glass. CAR-T cells are adde
 ## Pipeline overview
 
 ```
-ND2 ──► mufile convert ──► raw TIFFs ──► muregister ──► bbox CSV ──► mufile crop ──► crops.zarr
+ND2 ──► mufile convert ──► raw TIFFs ──► /register ──► bbox CSV ──► mufile crop ──► crops.zarr
                                                         │
                                                         ▼
-                                                      musee ──► annotation CSV
+                                                      /see ──► annotation CSV
                                                         │
                                                         ▼
                                                 mukill dataset ──► HF Dataset
@@ -50,14 +50,11 @@ ND2 ──► mufile convert ──► raw TIFFs ──► muregister ──► 
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| `mupattern/` | React/Vite | Landing page linking to muregister and musee |
-| `muregister/` | React/Vite | Pattern-to-image registration: fit lattice grid, auto-normalize display, detect cells, export bbox CSV |
+| `mupattern/` | React/Vite | Unified web app: workspace management, pattern registration (Register), crop viewer (See) |
 | `mufile/` | Python CLI/GUI | Microscopy file utilities: convert ND2 → TIFF, crop TIFFs → zarr, export movies |
-| `musee/` | React/Vite | Browse crops in the zarr store, annotate cell presence/absence |
 | `mukill/` | Python CLI | Build HuggingFace Dataset, train ResNet-18 classifier, run inference, enforce monotonicity, plot kill curves |
 | `muexpression/` | Python CLI/GUI | Measure fluorescence expression per crop over time, plot intensity curves |
 | `muspot/` | Python CLI | Detect fluorescent spots per crop over time using spotiflow, plot spot count curves |
-| `shared/` | React | Shared shadcn/ui components used by mupattern, muregister, and musee |
 
 ## Prerequisites
 
@@ -67,30 +64,56 @@ ND2 ──► mufile convert ──► raw TIFFs ──► muregister ──► 
 
 ## Step-by-step guide
 
-### 1. Fit the pattern grid (muregister)
-
-Open the web app and load a phase contrast image from your microscopy data (any single timepoint, e.g. `t=0`).
+### 1. Start the web app
 
 ```bash
-cd muregister
+cd mupattern
 bun install
 bun run dev
 # open http://localhost:5173
 ```
 
-In the app:
+The landing page (`/`) is the workspace hub. From here you can:
 
-1. **Load image**: drag-and-drop a TIF/PNG from your position folder. Images are auto-normalized for display; detection uses original pixel values.
-2. **Set calibration**: pick the objective preset (10x, 20x, 40x) or type µm/pixel
-3. **Configure lattice**: set parameters `a`, `b`, `α`, `β`, and square size to match the micropattern geometry. Use "Square" or "Hex" presets if applicable
-4. **Auto-detect** (optional): click "Detect cells" to find grid points (shown as green crosses), then click "Auto square (a=b)" or "Auto hex (a=b)" to fit the lattice. Works best on clear phase contrast images with regular spacing
-5. **Align**: drag the pattern overlay to fine-tune — left-drag to pan, middle-drag to scale, right-drag to rotate
-6. **Export**: click Export to download three files:
+- **Open a folder** of TIF files to create a workspace (one file per position)
+- Click a position in the list to jump straight into registration
+- Click **Register** or **See** to open those tools independently
+
+### 1a. Workspace mode (recommended for multiple positions)
+
+Use this when you have a folder of phase contrast TIF files, one per position. This is the fastest way to register many positions.
+
+1. Click **Open folder** on the landing page and select the folder containing your TIF files
+2. The app scans for `.tif`/`.tiff` files and displays them as a position list
+3. Click any position to load it into the registration tool (`/register`)
+4. Register the pattern (see steps below), then click **Export**
+5. Use the **prev/next** arrows in the header (or the position counter `3 / 12`) to move to the next position — the pattern, calibration, and transform carry over, only the image changes
+6. Repeat export for each position
+
+The workspace persists across page reloads (position list in localStorage, folder handle in IndexedDB). Re-opening the app restores your position list; the browser may prompt you to re-grant folder access.
+
+### 1b. Single-file mode
+
+If you only have one image, or want to work without a workspace:
+
+1. Click **Register** on the landing page (or go to `/register`)
+2. You'll see the register landing with options to **Load image** (single TIF/PNG) or **Start fresh** (blank canvas)
+3. Register the pattern and export as usual
+
+### Registration workflow (both modes)
+
+Once an image is loaded in the registration tool:
+
+1. **Set calibration**: pick the objective preset (10x, 20x, 40x) or type µm/pixel
+2. **Configure lattice**: set parameters `a`, `b`, `alpha`, `beta`, and square size to match the micropattern geometry. Use "Square" or "Hex" presets if applicable
+3. **Auto-detect** (optional): click "Detect cells" to find grid points (shown as green crosses), then click "Auto square (a=b)" or "Auto hex (a=b)" to fit the lattice. Works best on clear phase contrast images with regular spacing
+4. **Align**: drag the pattern overlay to fine-tune — left-drag to pan, middle-drag to scale, right-drag to rotate
+5. **Export**: click Export to download three files:
    - `*_bbox.csv` — bounding boxes for each pattern site (`crop,x,y,w,h`)
    - `*_config.yaml` — lattice parameters (for reloading later)
    - `*_mask.png` — binary mask image
 
-The bbox CSV is the input for the next step. Repeat for each position if the pattern grid differs.
+The bbox CSV is the input for the cropping step. In workspace mode, use prev/next to move between positions without re-exporting each time.
 
 ### 2a. Convert ND2 to TIFF (mufile convert)
 
@@ -130,7 +153,7 @@ uv run mufile crop \
 
 - `--input` is the **parent** directory containing `Pos{N}/` subdirectories
 - `--pos` is the position number (e.g. `150` reads from `Pos150/`)
-- `--bbox` is the CSV exported by muregister
+- `--bbox` is the CSV exported by the registration tool (`/register`)
 - `--output` is the zarr store path (created if it doesn't exist, appended if it does)
 - `--background` / `--no-background` — whether to compute per-frame background (median of pixels outside all crop bounding boxes), stored in the zarr store
 
@@ -148,26 +171,18 @@ crops.zarr/
 
 Each crop is a TCZYX zarr array with chunk size `(1,1,1,H,W)` for fast single-frame reads.
 
-### 3. Annotate in musee
+### 3. Annotate in See
 
-Open the crop viewer to label cells as present or absent.
+Open the crop viewer to label cells as present or absent. See is available at `/see` within the mupattern app.
 
-```bash
-cd musee
-bun install
-bun run dev
-# open http://localhost:5174
-```
-
-In the app:
-
-1. **Open folder**: click "Open zarr" and select the `pos/150/crop/` directory inside your `crops.zarr` store using the browser's folder picker
-2. **Browse**: use the time slider and transport controls (`|<`, `<<`, `<`, play, `>`, `>>`, `>|`) to scrub through timepoints. The 5x5 grid shows crops with auto-contrast
-3. **Annotate**: click the "Annotate" toggle, then click crops to cycle through states:
+1. From the landing page, click **See** (or navigate to `/see`)
+2. **Open folder**: click "Open crops.zarr" and select the `crops.zarr` directory using the browser's folder picker
+3. **Browse**: use the time slider and transport controls (`|<`, `<<`, `<`, play, `>`, `>>`, `>|`) to scrub through timepoints. The 5x5 grid shows crops with auto-contrast
+4. **Annotate**: click the "Annotate" toggle, then click crops to cycle through states:
    - **No ring** → **Blue ring** (present) → **Red ring** (absent) → **No ring**
    - **Green ring** appears on crops annotated at other timepoints but not the current one (helps you find gaps)
-4. **Navigate pages**: use page controls below the grid to see all crops
-5. **Save**: click "Save CSV" to download `annotations.csv` with format `t,crop,label`
+5. **Navigate pages**: use page controls below the grid to see all crops
+6. **Save**: click "Save CSV" to download `annotations.csv` with format `t,crop,label`
 
 Tips:
 - Start at `t=0` and annotate a representative subset of crops (e.g. 20–30 crops)
@@ -252,7 +267,7 @@ uv run mukill predict \
   --output /path/to/predictions.csv
 ```
 
-Output is a CSV in the same `t,crop,label` format as annotations — can be loaded back into musee for visual verification.
+Output is a CSV in the same `t,crop,label` format as annotations — can be loaded back into See for visual verification.
 
 ### 7. Clean and plot (mukill)
 
@@ -402,7 +417,7 @@ uvx --from huggingface_hub hf download keejkrej/mupattern-resnet18 --local-dir .
 
 ## File formats
 
-### Bounding box CSV (muregister → mufile crop)
+### Bounding box CSV (Register → mufile crop)
 
 ```csv
 crop,x,y,w,h
@@ -410,7 +425,7 @@ crop,x,y,w,h
 1,22,1678,77,77
 ```
 
-### Annotation / prediction CSV (musee ↔ mukill)
+### Annotation / prediction CSV (See ↔ mukill)
 
 ```csv
 t,crop,label
@@ -474,14 +489,10 @@ Outputs: `dist/mufile-gui.exe` and `dist/muexpression-gui.exe`. These bundles do
 ## Development
 
 ```bash
-# Install JS dependencies (from repo root)
+# Install JS dependencies and run the web app
+cd mupattern
 bun install
-
-# Run muregister
-cd muregister && bun run dev
-
-# Run musee
-cd musee && bun run dev
+bun run dev
 
 # Run Python CLIs from repo root (uv workspace)
 uv run mufile --help
@@ -492,7 +503,7 @@ uv run muspot --help
 
 ## Tech stack
 
-- **mupattern / muregister / musee**: React 18, TypeScript, Vite, Tailwind CSS 4, shadcn/ui, HTML5 Canvas, File System Access API
+- **mupattern** (register + see): React 18, TypeScript, Vite, React Router, TanStack Store, Tailwind CSS 4, shadcn/ui, HTML5 Canvas, File System Access API
 - **mufile**: Python, typer, zarr v2, tifffile, numpy, nd2
 - **mukill**: Python, typer, transformers (HuggingFace), torch, zarr v2, datasets, evaluate, pandas, matplotlib
 - **muexpression**: Python, typer, zarr v2, numpy, pandas, matplotlib

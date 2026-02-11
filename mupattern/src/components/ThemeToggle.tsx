@@ -1,6 +1,6 @@
 import { Sun, Moon } from "lucide-react"
-import { Switch } from "@mupattern/ui/components/ui/switch"
-import { Label } from "@mupattern/ui/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 import { useTheme } from "@/components/ThemeProvider"
 
 export function ThemeToggle() {
