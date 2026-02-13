@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { Slider } from "@/components/ui/slider"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -7,6 +8,7 @@ import type { Lattice, PatternConfigUm } from "@/register/types"
 
 interface PatternEditorProps {
   pattern: PatternConfigUm
+  latticeMinUm: number
   onLatticeUpdate: (updates: Partial<Lattice>) => void
   onWidthUpdate: (width: number) => void
   onHeightUpdate: (height: number) => void
@@ -60,7 +62,7 @@ function SliderRow({
   )
 }
 
-export function PatternEditor({ pattern, onLatticeUpdate, onWidthUpdate, onHeightUpdate }: PatternEditorProps) {
+export const PatternEditor = memo(function PatternEditor({ pattern, latticeMinUm, onLatticeUpdate, onWidthUpdate, onHeightUpdate }: PatternEditorProps) {
   const { lattice, width, height } = pattern
   const alphaDeg = radToDeg(lattice.alpha)
   const betaDeg = radToDeg(lattice.beta)
@@ -69,7 +71,7 @@ export function PatternEditor({ pattern, onLatticeUpdate, onWidthUpdate, onHeigh
     <div className="space-y-4">
       <div className="space-y-3">
         <p className="text-base font-medium text-muted-foreground uppercase tracking-wider">Vector 1</p>
-        <SliderRow label="a" value={lattice.a} min={1} max={200} step={0.5} unit="µm"
+        <SliderRow label="a" value={lattice.a} min={latticeMinUm} max={200} step={0.5} unit="µm"
           onChange={(v) => onLatticeUpdate({ a: v })} />
         <SliderRow label="alpha" value={alphaDeg} min={-180} max={180} step={1} unit="deg"
           onChange={(v) => onLatticeUpdate({ alpha: degToRad(v) })} />
@@ -77,7 +79,7 @@ export function PatternEditor({ pattern, onLatticeUpdate, onWidthUpdate, onHeigh
 
       <div className="space-y-3">
         <p className="text-base font-medium text-muted-foreground uppercase tracking-wider">Vector 2</p>
-        <SliderRow label="b" value={lattice.b} min={1} max={200} step={0.5} unit="µm"
+        <SliderRow label="b" value={lattice.b} min={latticeMinUm} max={200} step={0.5} unit="µm"
           onChange={(v) => onLatticeUpdate({ b: v })} />
         <SliderRow label="beta" value={betaDeg} min={-180} max={180} step={1} unit="deg"
           onChange={(v) => onLatticeUpdate({ beta: degToRad(v) })} />
@@ -111,4 +113,4 @@ export function PatternEditor({ pattern, onLatticeUpdate, onWidthUpdate, onHeigh
       </div>
     </div>
   )
-}
+})

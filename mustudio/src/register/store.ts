@@ -18,7 +18,7 @@ export interface AppState {
   pattern: PatternConfigUm
   transform: Transform
   calibration: Calibration
-  sensitivity: number
+  patternOpacity: number
   detectedPoints: Array<{ x: number; y: number }> | null
 }
 
@@ -30,12 +30,39 @@ const defaultState: AppState = {
   pattern: DEFAULT_PATTERN_UM,
   transform: DEFAULT_TRANSFORM,
   calibration: DEFAULT_CALIBRATION,
-  sensitivity: 0.5,
+  patternOpacity: 0.7,
   detectedPoints: null,
 }
 
 export const appStore = createPersistedStore<AppState>("mustudio-register-app", defaultState, {
+  serialize: (state) => ({
+    ...state,
+    // Avoid persisting large base64 payloads that can block the UI thread.
+    imageDataURL: null,
+    started: state.imageDataURL ? false : state.started,
+  }),
   debounceMs: 500,
+  deserialize: (raw) => {
+    const persisted = (raw as Partial<AppState>) ?? {}
+    return {
+      ...defaultState,
+      ...persisted,
+      canvasSize: { ...defaultState.canvasSize, ...(persisted.canvasSize ?? {}) },
+      pattern: {
+        ...defaultState.pattern,
+        ...(persisted.pattern ?? {}),
+        lattice: {
+          ...defaultState.pattern.lattice,
+          ...(persisted.pattern?.lattice ?? {}),
+        },
+      },
+      transform: { ...defaultState.transform, ...(persisted.transform ?? {}) },
+      calibration: { ...defaultState.calibration, ...(persisted.calibration ?? {}) },
+      patternOpacity: typeof persisted.patternOpacity === "number"
+        ? Math.max(0, Math.min(1, persisted.patternOpacity))
+        : defaultState.patternOpacity,
+    }
+  },
 })
 
 // --- Actions ---
@@ -70,7 +97,10 @@ export function loadImage(imageDataURL: string, filename: string, width: number,
 }
 
 export function setPattern(pattern: PatternConfigUm) {
-  appStore.setState((s) => ({ ...s, pattern }))
+  appStore.setState((s) => ({
+    ...s,
+    pattern,
+  }))
 }
 
 export function updateLattice(updates: Partial<Lattice>) {
@@ -137,8 +167,8 @@ export function setCalibration(cal: Calibration) {
   }
 }
 
-export function setSensitivity(sensitivity: number) {
-  appStore.setState((s) => ({ ...s, sensitivity }))
+export function setPatternOpacity(patternOpacity: number) {
+  appStore.setState((s) => ({ ...s, patternOpacity: Math.max(0, Math.min(1, patternOpacity)) }))
 }
 
 export function resetPatternAndTransform() {

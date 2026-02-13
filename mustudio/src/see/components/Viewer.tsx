@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useStore } from "@tanstack/react-store";
-import type { DirectoryStore } from "@/see/lib/directory-store";
-import type { StoreIndex, CropInfo } from "@/see/lib/zarr";
+import type { StoreIndex, CropInfo, ZarrStore } from "@/see/lib/zarr";
 import { loadFrame } from "@/see/lib/zarr";
+import { loadBatchWithRetryOnTotalFailure } from "@/see/lib/frame-loader";
 import { renderUint16ToCanvas, drawSpots } from "@/see/lib/render";
 import {
   type Annotations,
@@ -19,12 +19,14 @@ import {
   setSelectedPos as persistSelectedPos,
   setT as persistT,
   setC as persistC,
+  setZ as persistZ,
   setPage as persistPage,
   setContrast as persistContrast,
   setAnnotating as persistAnnotating,
   setShowAnnotations as persistShowAnnotations,
   setShowSpots as persistShowSpots,
 } from "@/see/store";
+import { LeftSliceSidebar } from "@/see/components/LeftSliceSidebar";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -51,7 +53,7 @@ import { useTheme } from "@/components/ThemeProvider";
 const PAGE_SIZE = 25; // 5x5
 
 interface ViewerProps {
-  store: DirectoryStore;
+  store: ZarrStore;
   index: StoreIndex;
 }
 
@@ -62,6 +64,7 @@ export function Viewer({ store, index }: ViewerProps) {
   const selectedPos = useStore(viewerStore, (s) => s.selectedPos);
   const t = useStore(viewerStore, (s) => s.t);
   const c = useStore(viewerStore, (s) => s.c);
+  const z = useStore(viewerStore, (s) => s.z);
   const page = useStore(viewerStore, (s) => s.page);
   const contrastMin = useStore(viewerStore, (s) => s.contrastMin);
   const contrastMax = useStore(viewerStore, (s) => s.contrastMax);
@@ -85,6 +88,8 @@ export function Viewer({ store, index }: ViewerProps) {
 
   // Ephemeral state
   const [playing, setPlaying] = useState(false);
+  const [frameLoadError, setFrameLoadError] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [autoContrastDone, setAutoContrastDone] = useState(
     // If we have persisted contrast values that aren't defaults, skip auto
     contrastMin !== 0 || contrastMax !== 65535
@@ -92,6 +97,7 @@ export function Viewer({ store, index }: ViewerProps) {
 
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshedKeysRef = useRef<Set<string>>(new Set());
 
   // Validate persisted selectedPos against available positions
   const validPos = index.positions.includes(selectedPos)
@@ -108,8 +114,11 @@ export function Viewer({ store, index }: ViewerProps) {
   const crops: CropInfo[] = index.crops.get(validPos) ?? [];
   const maxT = crops.length > 0 ? crops[0].shape[0] - 1 : 0;
   const numChannels = crops.length > 0 ? crops[0].shape[1] : 1;
+  const maxZ = crops.length > 0 ? crops[0].shape[2] - 1 : 0;
   const totalPages = Math.ceil(crops.length / PAGE_SIZE);
   const clampedT = Math.min(t, maxT);
+  const clampedZ = Math.min(z, maxZ);
+  const clampedC = Math.min(c, Math.max(0, numChannels - 1));
   const clampedPage = Math.min(page, Math.max(0, totalPages - 1));
   const pageCrops = crops.slice(clampedPage * PAGE_SIZE, (clampedPage + 1) * PAGE_SIZE);
 
@@ -117,6 +126,12 @@ export function Viewer({ store, index }: ViewerProps) {
   useEffect(() => {
     if (clampedT !== t) persistT(clampedT);
   }, [clampedT, t]);
+  useEffect(() => {
+    if (clampedC !== c) persistC(clampedC);
+  }, [clampedC, c]);
+  useEffect(() => {
+    if (clampedZ !== z) persistZ(clampedZ);
+  }, [clampedZ, z]);
   useEffect(() => {
     if (clampedPage !== page) persistPage(clampedPage);
   }, [clampedPage, page]);
@@ -158,15 +173,28 @@ export function Viewer({ store, index }: ViewerProps) {
   // Load visible crops and render
   useEffect(() => {
     let cancelled = false;
+    const renderKey = `${validPos}:${clampedT}:${clampedC}:${clampedZ}:${clampedPage}`;
 
     async function loadPage() {
-      const frames = await Promise.all(
-        pageCrops.map((crop) =>
-          loadFrame(store, crop.posId, crop.cropId, clampedT, c).catch(() => null)
-        )
+      const frameResults = await loadBatchWithRetryOnTotalFailure(
+        pageCrops,
+        async (crop) => {
+          try {
+            return await loadFrame(store, crop.posId, crop.cropId, clampedT, clampedC, clampedZ);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            throw new Error(`pos=${crop.posId} crop=${crop.cropId} t=${clampedT} c=${clampedC} z=${clampedZ}: ${msg}`);
+          }
+        }
       );
+      const frames = frameResults.map((r) => r.value);
 
       if (cancelled) return;
+      const firstError = frameResults.find((r) => r.error)?.error ?? null;
+      setFrameLoadError(firstError);
+
+      let renderContrastMin = contrastMin;
+      let renderContrastMax = contrastMax;
 
       // Compute auto-contrast from all visible crops combined
       if (!autoContrastDone) {
@@ -182,6 +210,8 @@ export function Viewer({ store, index }: ViewerProps) {
           const sorted = new Uint16Array(allData).sort();
           const lo = sorted[Math.floor(sorted.length * 0.02)];
           const hi = sorted[Math.floor(sorted.length * 0.98)];
+          renderContrastMin = lo;
+          renderContrastMax = hi;
           persistContrast(lo, hi);
           setAutoContrastDone(true);
         }
@@ -190,15 +220,15 @@ export function Viewer({ store, index }: ViewerProps) {
       // Render each crop
       for (let i = 0; i < pageCrops.length; i++) {
         const frame = frames[i];
-        const canvas = canvasRefs.current.get(pageCrops[i].cropId);
+        const canvas = canvasRefs.current.get(canvasKey(pageCrops[i].posId, pageCrops[i].cropId));
         if (!frame || !canvas) continue;
         renderUint16ToCanvas(
           canvas,
           frame.data,
           frame.width,
           frame.height,
-          contrastMin,
-          contrastMax
+          renderContrastMin,
+          renderContrastMax
         );
         // Overlay spots
         if (showSpots) {
@@ -207,6 +237,14 @@ export function Viewer({ store, index }: ViewerProps) {
           if (cropSpots) drawSpots(canvas, cropSpots);
         }
       }
+
+      // Force one follow-up repaint after initial data fetch for this view key.
+      if (!refreshedKeysRef.current.has(renderKey)) {
+        refreshedKeysRef.current.add(renderKey);
+        requestAnimationFrame(() => {
+          if (!cancelled) setRefreshTick((v) => v + 1);
+        });
+      }
     }
 
     loadPage();
@@ -214,14 +252,14 @@ export function Viewer({ store, index }: ViewerProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, validPos, clampedT, c, clampedPage, contrastMin, contrastMax, autoContrastDone, spots, showSpots]);
+  }, [store, validPos, clampedT, clampedC, clampedZ, clampedPage, contrastMin, contrastMax, autoContrastDone, spots, showSpots, refreshTick]);
 
   const setCanvasRef = useCallback(
-    (cropId: string) => (el: HTMLCanvasElement | null) => {
+    (key: string) => (el: HTMLCanvasElement | null) => {
       if (el) {
-        canvasRefs.current.set(cropId, el);
+        canvasRefs.current.set(key, el);
       } else {
-        canvasRefs.current.delete(cropId);
+        canvasRefs.current.delete(key);
       }
     },
     []
@@ -231,15 +269,9 @@ export function Viewer({ store, index }: ViewerProps) {
     setAutoContrastDone(false);
   }, []);
 
-  const handleChangePos = useCallback((posId: string) => {
-    persistSelectedPos(posId);
+  useLayoutEffect(() => {
     setAutoContrastDone(false);
-  }, []);
-
-  const handleChangeChannel = useCallback((ch: number) => {
-    persistC(ch);
-    setAutoContrastDone(false);
-  }, []);
+  }, [store, validPos, clampedC, clampedZ]);
 
   // Annotation handler: click cycles true → false → remove
   const handleAnnotate = useCallback(
@@ -334,30 +366,6 @@ export function Viewer({ store, index }: ViewerProps) {
           </p>
         </div>
         <div className="flex items-center gap-6">
-          {index.positions.length > 1 && (
-            <select
-              value={validPos}
-              onChange={(e) => handleChangePos(e.target.value)}
-              className="bg-secondary text-secondary-foreground rounded px-2 py-1 text-sm"
-            >
-              {index.positions.map((p) => (
-                <option key={p} value={p}>
-                  Pos {p}
-                </option>
-              ))}
-            </select>
-          )}
-          <select
-            value={c}
-            onChange={(e) => handleChangeChannel(Number(e.target.value))}
-            className="bg-secondary text-secondary-foreground rounded px-2 py-1 text-sm"
-          >
-            {Array.from({ length: numChannels }, (_, i) => (
-              <option key={i} value={i}>
-                Ch {i}
-              </option>
-            ))}
-          </select>
           <span className="text-sm text-muted-foreground">
             {crops.length} crops
           </span>
@@ -373,6 +381,11 @@ export function Viewer({ store, index }: ViewerProps) {
           </div>
         </div>
       </header>
+      {frameLoadError && (
+        <div className="px-4 py-2 text-xs text-destructive border-b">
+          {frameLoadError}
+        </div>
+      )}
 
       {/* Slider row */}
       <div className="px-4 py-1 border-b">
@@ -440,17 +453,18 @@ export function Viewer({ store, index }: ViewerProps) {
 
       {/* Main area: crop grid + right sidebar */}
       <div className="flex flex-1 overflow-hidden">
+        <LeftSliceSidebar />
         {/* Crop grid */}
         <div className="flex-1 overflow-hidden p-4">
           <div className="grid grid-cols-5 grid-rows-5 gap-2 h-full">
             {pageCrops.map((crop) => (
               <div
-                key={crop.cropId}
+                key={canvasKey(crop.posId, crop.cropId)}
                 className={`relative rounded-sm ${annotating ? "cursor-crosshair" : ""} ${borderClass(crop.cropId)}`}
                 onClick={annotating ? () => handleAnnotate(crop.cropId) : undefined}
               >
                 <canvas
-                  ref={setCanvasRef(crop.cropId)}
+                  ref={setCanvasRef(canvasKey(crop.posId, crop.cropId))}
                   className="block w-full h-full object-contain"
                   style={{ imageRendering: "pixelated" }}
                 />
@@ -557,3 +571,6 @@ export function Viewer({ store, index }: ViewerProps) {
     </div>
   );
 }
+  function canvasKey(posId: string, cropId: string): string {
+    return `${posId}:${cropId}`;
+  }

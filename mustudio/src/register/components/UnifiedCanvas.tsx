@@ -12,24 +12,61 @@ interface UnifiedCanvasProps {
   onTransformUpdate: (updates: Partial<Transform>) => void
   onZoom: (factor: number) => void
   onRotate: (deltaRad: number) => void
-  sensitivity: number
-  onExportYAML?: () => void
+  patternOpacity: number
   detectedPoints?: Array<{ x: number; y: number }> | null
 }
 
 export interface UnifiedCanvasRef {
-  exportPNG: () => void
   exportCSV: () => void
-  exportAll: () => void
+}
+
+const MAX_PREVIEW_RECTS = 12000
+const MAX_PREVIEW_OVERLAP_RECTS = 6000
+const STORE_SYNC_INTERVAL_MS = 50
+const TELEMETRY_WINDOW_MS = 2000
+
+interface DrawOptions {
+  mode: "preview" | "export"
+  simplified: boolean
+  maxRects: number | null
+  maxOverlapRects: number | null
+}
+
+interface LatticeDrawStats {
+  estimatedRects: number
+  drawnRects: number
+  stride: number
+  capped: boolean
 }
 
 export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
-  function UnifiedCanvas({ displayImage, canvasSize, imageBaseName, patternPx, transform, onTransformUpdate, onZoom, onRotate, sensitivity, onExportYAML, detectedPoints }, ref) {
+  function UnifiedCanvas({ displayImage, canvasSize, imageBaseName, patternPx, transform, onTransformUpdate, onZoom, onRotate, patternOpacity, detectedPoints }, ref) {
     const { theme } = useTheme()
     const canvasRef = useRef<HTMLCanvasElement>(null)
+
     type DragMode = "none" | "pan" | "rotate" | "resize"
     const dragMode = useRef<DragMode>("none")
+    const activePointerId = useRef<number | null>(null)
+    const renderRafRef = useRef<number | null>(null)
     const lastPos = useRef({ x: 0, y: 0 })
+
+    const previewTransformRef = useRef<Transform>(transform)
+    const previewPatternRef = useRef<PatternPixels>(patternPx)
+    const pendingZoomFactorRef = useRef(1)
+    const pendingRotateDeltaRef = useRef(0)
+    const lastStoreSyncAtRef = useRef(0)
+
+    const frameWindowStartRef = useRef(0)
+    const frameCountRef = useRef(0)
+    const syncWindowStartRef = useRef(0)
+    const syncCountRef = useRef(0)
+    const lastDrawStatsRef = useRef<LatticeDrawStats | null>(null)
+
+    const clonePattern = useCallback((pattern: PatternPixels): PatternPixels => ({
+      lattice: { ...pattern.lattice },
+      width: pattern.width,
+      height: pattern.height,
+    }), [])
 
     const drawLattice = useCallback((
       ctx: CanvasRenderingContext2D,
@@ -37,8 +74,8 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
       height: number,
       pattern: PatternPixels,
       tx: Transform,
-      mode: "preview" | "export"
-    ) => {
+      options: DrawOptions
+    ): LatticeDrawStats => {
       const { lattice, width: rectW, height: rectH } = pattern
       const vec1 = {
         x: lattice.a * Math.cos(lattice.alpha),
@@ -52,11 +89,9 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
       const halfW = rectW / 2
       const halfH = rectH / 2
 
-      // Center of canvas is the pattern origin, offset by translation
       const cx = width / 2
       const cy = height / 2
 
-      // Calculate range needed to cover the entire canvas
       const minLen = Math.min(
         Math.sqrt(vec1.x * vec1.x + vec1.y * vec1.y),
         Math.sqrt(vec2.x * vec2.x + vec2.y * vec2.y)
@@ -64,31 +99,33 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
       const maxDim = Math.max(width, height) * 2
       const maxRange = minLen > 0 ? Math.ceil(maxDim / minLen) + 2 : 20
 
+      const estimatedRects = Math.pow(maxRange * 2 + 1, 2)
+      let stride = 1
+      if (options.maxRects != null && estimatedRects > options.maxRects) {
+        stride = Math.max(1, Math.ceil(Math.sqrt(estimatedRects / options.maxRects)))
+      }
+
       ctx.save()
       ctx.translate(cx + tx.tx, cy + tx.ty)
 
-      if (mode === "preview") {
-        ctx.fillStyle = "rgba(59, 130, 246, 0.7)"
-      } else {
-        ctx.fillStyle = "#ffffff"
-      }
+      ctx.fillStyle = options.mode === "preview"
+        ? `rgba(59, 130, 246, ${Math.max(0, Math.min(1, patternOpacity))})`
+        : "#ffffff"
 
-      for (let i = -maxRange; i <= maxRange; i++) {
-        for (let j = -maxRange; j <= maxRange; j++) {
+      let drawnRects = 0
+      for (let i = -maxRange; i <= maxRange; i += stride) {
+        for (let j = -maxRange; j <= maxRange; j += stride) {
           const x = i * vec1.x + j * vec2.x
           const y = i * vec1.y + j * vec2.y
 
-          // Check if point is in viewport (approximate, accounting for rotation)
-          const absX = Math.abs(x + tx.tx)
-          const absY = Math.abs(y + tx.ty)
-          if (absX > maxDim || absY > maxDim) continue
+          if (Math.abs(x) > maxDim || Math.abs(y) > maxDim) continue
 
           ctx.fillRect(x - halfW, y - halfH, rectW, rectH)
+          drawnRects++
         }
       }
 
-      // Highlight overlapping regions in preview mode
-      if (mode === "preview") {
+      if (options.mode === "preview" && !options.simplified) {
         const neighborOffsets = [
           { dx: vec1.x, dy: vec1.y },
           { dx: vec2.x, dy: vec2.y },
@@ -97,39 +134,50 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
         ]
         const overlapOffsets = neighborOffsets
           .map(({ dx, dy }) => ({
-            dx, dy,
+            dx,
+            dy,
             ow: rectW - Math.abs(dx),
             oh: rectH - Math.abs(dy),
           }))
           .filter(({ ow, oh }) => ow > 0 && oh > 0)
 
         if (overlapOffsets.length > 0) {
+          let overlapStride = stride
+          if (options.maxOverlapRects != null) {
+            const estimatedOverlapRects = estimatedRects * overlapOffsets.length
+            if (estimatedOverlapRects > options.maxOverlapRects) {
+              overlapStride = Math.max(
+                overlapStride,
+                Math.ceil(Math.sqrt(estimatedOverlapRects / options.maxOverlapRects))
+              )
+            }
+          }
+
           ctx.fillStyle = "rgba(239, 68, 68, 0.6)"
-          for (let i = -maxRange; i <= maxRange; i++) {
-            for (let j = -maxRange; j <= maxRange; j++) {
+          for (let i = -maxRange; i <= maxRange; i += overlapStride) {
+            for (let j = -maxRange; j <= maxRange; j += overlapStride) {
               const x = i * vec1.x + j * vec2.x
               const y = i * vec1.y + j * vec2.y
-              const absX = Math.abs(x + tx.tx)
-              const absY = Math.abs(y + tx.ty)
-              if (absX > maxDim || absY > maxDim) continue
+              if (Math.abs(x) > maxDim || Math.abs(y) > maxDim) continue
 
               for (const { dx, dy, ow, oh } of overlapOffsets) {
                 ctx.fillRect(x + dx / 2 - ow / 2, y + dy / 2 - oh / 2, ow, oh)
               }
             }
           }
+
+          if (overlapStride > stride) {
+            stride = overlapStride
+          }
         }
       }
 
-      // Draw visual aids in preview mode
-      if (mode === "preview") {
-        // Origin marker
+      if (options.mode === "preview" && !options.simplified) {
         ctx.beginPath()
         ctx.arc(0, 0, 4, 0, Math.PI * 2)
         ctx.fillStyle = "rgba(255, 255, 255, 0.8)"
         ctx.fill()
 
-        // Basis vector 1
         ctx.strokeStyle = "rgba(255, 100, 100, 0.8)"
         ctx.lineWidth = 2
         ctx.beginPath()
@@ -144,7 +192,6 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
         ctx.lineTo(vec1.x - 8 * Math.cos(a1 + 0.3), vec1.y - 8 * Math.sin(a1 + 0.3))
         ctx.stroke()
 
-        // Basis vector 2
         ctx.strokeStyle = "rgba(100, 255, 100, 0.8)"
         ctx.beginPath()
         ctx.moveTo(0, 0)
@@ -161,8 +208,7 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
 
       ctx.restore()
 
-      // Crosshair (in canvas space, not transformed)
-      if (mode === "preview") {
+      if (options.mode === "preview") {
         ctx.strokeStyle = "rgba(255, 255, 255, 0.15)"
         ctx.lineWidth = 1
         ctx.beginPath()
@@ -172,15 +218,52 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
         ctx.lineTo(width, cy)
         ctx.stroke()
       }
-    }, [])
 
-    const draw = useCallback(() => {
+      return {
+        estimatedRects,
+        drawnRects,
+        stride,
+        capped: stride > 1,
+      }
+    }, [patternOpacity])
+
+    const flushStoreSync = useCallback((force: boolean) => {
+      const now = performance.now()
+      if (!force && now - lastStoreSyncAtRef.current < STORE_SYNC_INTERVAL_MS) {
+        return
+      }
+
+      switch (dragMode.current) {
+        case "pan":
+          onTransformUpdate(previewTransformRef.current)
+          break
+        case "rotate":
+          if (pendingRotateDeltaRef.current !== 0) {
+            onRotate(pendingRotateDeltaRef.current)
+            pendingRotateDeltaRef.current = 0
+          }
+          break
+        case "resize":
+          if (pendingZoomFactorRef.current !== 1) {
+            onZoom(pendingZoomFactorRef.current)
+            pendingZoomFactorRef.current = 1
+          }
+          break
+      }
+
+      lastStoreSyncAtRef.current = now
+      syncCountRef.current += 1
+      if (syncWindowStartRef.current === 0) {
+        syncWindowStartRef.current = now
+      }
+    }, [onTransformUpdate, onRotate, onZoom])
+
+    const drawFrame = useCallback((timestamp: number) => {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
-      // Clear
       ctx.fillStyle = theme === "dark" ? "#262626" : "#ffffff"
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
@@ -188,10 +271,18 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
         ctx.drawImage(displayImage, 0, 0, canvas.width, canvas.height)
       }
 
-      // Draw pattern overlay with transform
-      drawLattice(ctx, canvas.width, canvas.height, patternPx, transform, "preview")
+      const isDragging = dragMode.current !== "none"
+      const activePattern = isDragging ? previewPatternRef.current : patternPx
+      const activeTransform = isDragging ? previewTransformRef.current : transform
 
-      // Draw detected grid points as crosses
+      const stats = drawLattice(ctx, canvas.width, canvas.height, activePattern, activeTransform, {
+        mode: "preview",
+        simplified: isDragging,
+        maxRects: MAX_PREVIEW_RECTS,
+        maxOverlapRects: isDragging ? 0 : MAX_PREVIEW_OVERLAP_RECTS,
+      })
+      lastDrawStatsRef.current = stats
+
       if (detectedPoints && detectedPoints.length > 0) {
         ctx.save()
         ctx.strokeStyle = "rgba(0, 255, 100, 0.85)"
@@ -207,83 +298,72 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
         }
         ctx.restore()
       }
-    }, [displayImage, patternPx, transform, drawLattice, theme, detectedPoints])
+
+      if (import.meta.env.DEV) {
+        if (frameWindowStartRef.current === 0) {
+          frameWindowStartRef.current = timestamp
+        }
+        frameCountRef.current += 1
+
+        const dt = timestamp - frameWindowStartRef.current
+        if (dt >= TELEMETRY_WINDOW_MS) {
+          const fps = (frameCountRef.current * 1000) / dt
+          const syncStart = syncWindowStartRef.current || timestamp
+          const syncDt = Math.max(1, timestamp - syncStart)
+          const syncHz = (syncCountRef.current * 1000) / syncDt
+          const perfStats = lastDrawStatsRef.current
+          console.debug("[MuRegister perf]", {
+            fps: Number(fps.toFixed(1)),
+            syncHz: Number(syncHz.toFixed(1)),
+            estimatedRects: perfStats?.estimatedRects ?? 0,
+            drawnRects: perfStats?.drawnRects ?? 0,
+            capped: perfStats?.capped ?? false,
+            stride: perfStats?.stride ?? 1,
+          })
+          frameWindowStartRef.current = timestamp
+          frameCountRef.current = 0
+          syncWindowStartRef.current = timestamp
+          syncCountRef.current = 0
+        }
+      }
+    }, [theme, displayImage, patternPx, transform, drawLattice, detectedPoints])
+
+    const requestRender = useCallback(() => {
+      if (renderRafRef.current !== null) return
+      renderRafRef.current = window.requestAnimationFrame((ts) => {
+        renderRafRef.current = null
+        drawFrame(ts)
+      })
+    }, [drawFrame])
 
     useEffect(() => {
-      draw()
-    }, [draw])
+      requestRender()
+    }, [requestRender])
 
-    // Resize canvas when dimensions change
     useEffect(() => {
       const canvas = canvasRef.current
       if (!canvas) return
-
       canvas.width = canvasSize.width
       canvas.height = canvasSize.height
-      draw()
-    }, [canvasSize, draw])
+      requestRender()
+    }, [canvasSize, requestRender])
 
-    // Export: white-on-black pattern, same dimensions as canvas
-    const exportPNG = useCallback(() => {
-      const w = canvasSize.width
-      const h = canvasSize.height
+    useEffect(() => {
+      if (dragMode.current !== "none") return
+      previewTransformRef.current = transform
+      previewPatternRef.current = patternPx
+      pendingZoomFactorRef.current = 1
+      pendingRotateDeltaRef.current = 0
+    }, [transform, patternPx])
 
-      const exportCanvas = document.createElement("canvas")
-      exportCanvas.width = w
-      exportCanvas.height = h
-      const ctx = exportCanvas.getContext("2d")
-      if (!ctx) return
-
-      ctx.fillStyle = "#000000"
-      ctx.fillRect(0, 0, w, h)
-      drawLattice(ctx, w, h, patternPx, transform, "export")
-
-      // Flood-fill erase any white regions touching the boundary
-      const imageData = ctx.getImageData(0, 0, w, h)
-      const data = imageData.data
-      const visited = new Uint8Array(w * h)
-
-      const queue: number[] = []
-      const enqueue = (idx: number) => {
-        if (!visited[idx] && data[idx * 4] > 0) {
-          visited[idx] = 1
-          queue.push(idx)
+    useEffect(() => {
+      return () => {
+        if (renderRafRef.current !== null) {
+          window.cancelAnimationFrame(renderRafRef.current)
+          renderRafRef.current = null
         }
       }
-
-      // Seed from all 4 borders
-      for (let x = 0; x < w; x++) {
-        enqueue(x)                 // top row
-        enqueue((h - 1) * w + x)  // bottom row
-      }
-      for (let y = 0; y < h; y++) {
-        enqueue(y * w)             // left column
-        enqueue(y * w + w - 1)     // right column
-      }
-
-      // BFS flood fill: erase connected white pixels
-      while (queue.length > 0) {
-        const idx = queue.pop()!
-        const px = idx * 4
-        data[px] = 0
-        data[px + 1] = 0
-        data[px + 2] = 0
-
-        const x = idx % w
-        const y = (idx - x) / w
-        if (x > 0) enqueue(idx - 1)
-        if (x < w - 1) enqueue(idx + 1)
-        if (y > 0) enqueue(idx - w)
-        if (y < h - 1) enqueue(idx + w)
-      }
-
-      ctx.putImageData(imageData, 0, 0)
-
-      const link = document.createElement("a")
-      link.download = `${imageBaseName}_mask.png`
-      link.href = exportCanvas.toDataURL("image/png")
-      link.click()
-    }, [canvasSize, imageBaseName, patternPx, transform, drawLattice])
+    }, [])
 
     const exportCSV = useCallback(() => {
       const w = canvasSize.width
@@ -321,7 +401,6 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
           const bx = px - halfW
           const by = py - halfH
 
-          // Only include rectangles fully within image bounds
           if (bx >= 0 && by >= 0 && bx + rectW <= w && by + rectH <= h) {
             rows.push(`${crop},${Math.round(bx)},${Math.round(by)},${Math.round(rectW)},${Math.round(rectH)}`)
             crop++
@@ -337,56 +416,109 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
       URL.revokeObjectURL(link.href)
     }, [canvasSize, imageBaseName, patternPx, transform])
 
-    const exportAll = useCallback(() => {
-      exportPNG()
-      exportCSV()
-      onExportYAML?.()
-    }, [exportPNG, exportCSV, onExportYAML])
+    useImperativeHandle(ref, () => ({ exportCSV }), [exportCSV])
 
-    useImperativeHandle(ref, () => ({ exportPNG, exportCSV, exportAll }), [exportPNG, exportCSV, exportAll])
-
-    // --- Mouse interactions: move the pattern overlay ---
-
-    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (activePointerId.current !== null) return
       if (e.button === 2) {
         dragMode.current = "rotate"
       } else if (e.button === 1) {
         dragMode.current = "resize"
       } else if (e.button === 0) {
         dragMode.current = "pan"
+      } else {
+        return
       }
-      lastPos.current = { x: e.clientX, y: e.clientY }
-    }, [])
 
-    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+      activePointerId.current = e.pointerId
+      e.currentTarget.setPointerCapture(e.pointerId)
+      previewTransformRef.current = { ...transform }
+      previewPatternRef.current = clonePattern(patternPx)
+      pendingZoomFactorRef.current = 1
+      pendingRotateDeltaRef.current = 0
+      lastPos.current = { x: e.clientX, y: e.clientY }
+      lastStoreSyncAtRef.current = performance.now()
+      requestRender()
+    }, [transform, patternPx, clonePattern, requestRender])
+
+    const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
       if (dragMode.current === "none") return
+      if (activePointerId.current !== e.pointerId) return
 
       const dx = e.clientX - lastPos.current.x
       const dy = e.clientY - lastPos.current.y
       lastPos.current = { x: e.clientX, y: e.clientY }
 
-      // sensitivity 0–1 maps to 0.1x–10x multiplier (logarithmic)
-      const s = Math.pow(10, (sensitivity - 0.5) * 2)
-
       switch (dragMode.current) {
-        case "rotate":
-          onRotate(dx * 0.003 * s)
+        case "rotate": {
+          const delta = dx * 0.003
+          pendingRotateDeltaRef.current += delta
+          previewPatternRef.current = {
+            ...previewPatternRef.current,
+            lattice: {
+              ...previewPatternRef.current.lattice,
+              alpha: previewPatternRef.current.lattice.alpha + delta,
+              beta: previewPatternRef.current.lattice.beta + delta,
+            },
+          }
           break
-        case "resize":
-          onZoom(1 + dx * 0.002 * s)
+        }
+        case "resize": {
+          const factor = Math.max(0.01, 1 + dx * 0.002)
+          pendingZoomFactorRef.current *= factor
+          previewPatternRef.current = {
+            ...previewPatternRef.current,
+            lattice: {
+              ...previewPatternRef.current.lattice,
+              a: previewPatternRef.current.lattice.a * factor,
+              b: previewPatternRef.current.lattice.b * factor,
+            },
+            width: previewPatternRef.current.width * factor,
+            height: previewPatternRef.current.height * factor,
+          }
           break
-        case "pan":
-          onTransformUpdate({
-            tx: transform.tx + dx,
-            ty: transform.ty + dy,
-          })
+        }
+        case "pan": {
+          previewTransformRef.current = {
+            tx: previewTransformRef.current.tx + dx,
+            ty: previewTransformRef.current.ty + dy,
+          }
           break
+        }
       }
-    }, [transform, onTransformUpdate, onRotate, onZoom, sensitivity])
 
-    const handleMouseUp = useCallback(() => {
+      requestRender()
+      flushStoreSync(false)
+    }, [requestRender, flushStoreSync])
+
+    const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (activePointerId.current !== e.pointerId) return
+
+      flushStoreSync(true)
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+
+      activePointerId.current = null
       dragMode.current = "none"
-    }, [])
+      pendingZoomFactorRef.current = 1
+      pendingRotateDeltaRef.current = 0
+      requestRender()
+    }, [flushStoreSync, requestRender])
+
+    const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (activePointerId.current !== e.pointerId) return
+
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+
+      activePointerId.current = null
+      dragMode.current = "none"
+      pendingZoomFactorRef.current = 1
+      pendingRotateDeltaRef.current = 0
+      requestRender()
+    }, [requestRender])
 
     return (
       <div className="flex-1 overflow-auto rounded-lg border border-border bg-muted/30 p-1 flex items-center justify-center">
@@ -395,10 +527,10 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
           width={2048}
           height={2048}
           className="max-w-full max-h-full object-contain cursor-move"
-          onMouseDown={(e) => { e.preventDefault(); handleMouseDown(e) }}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          onPointerDown={(e) => { e.preventDefault(); handlePointerDown(e) }}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           onContextMenu={(e) => e.preventDefault()}
         />
       </div>

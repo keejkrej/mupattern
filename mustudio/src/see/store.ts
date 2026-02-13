@@ -8,6 +8,7 @@ export interface ViewerState {
   selectedPos: string
   t: number
   c: number
+  z: number
   page: number
   contrastMin: number
   contrastMax: number
@@ -24,6 +25,7 @@ const defaultState: ViewerState = {
   selectedPos: "",
   t: 0,
   c: 0,
+  z: 0,
   page: 0,
   contrastMin: 0,
   contrastMax: 65535,
@@ -36,7 +38,13 @@ const defaultState: ViewerState = {
 export const viewerStore = createPersistedStore<ViewerState>(
   "mustudio-see-viewer",
   defaultState,
-  { debounceMs: 500 }
+  {
+    debounceMs: 500,
+    deserialize: (raw) => ({
+      ...defaultState,
+      ...(raw as Partial<ViewerState>),
+    }),
+  }
 )
 
 // --- Actions ---
@@ -58,6 +66,10 @@ export function setT(t: number) {
 
 export function setC(c: number) {
   viewerStore.setState((s) => ({ ...s, c }))
+}
+
+export function setZ(z: number) {
+  viewerStore.setState((s) => ({ ...s, z }))
 }
 
 export function setPage(page: number) {

@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
@@ -15,7 +16,7 @@ const PRESETS = [
   { label: "40x", umPerPixel: 0.1625 },
 ] as const
 
-export function CalibrationControls({ calibration, onChange }: CalibrationControlsProps) {
+export const CalibrationControls = memo(function CalibrationControls({ calibration, onChange }: CalibrationControlsProps) {
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
@@ -57,4 +58,4 @@ export function CalibrationControls({ calibration, onChange }: CalibrationContro
       </div>
     </div>
   )
-}
+})

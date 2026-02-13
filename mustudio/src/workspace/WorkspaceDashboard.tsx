@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@tanstack/react-store"
 import { Button } from "@/components/ui/button"
@@ -11,65 +11,17 @@ import {
   addWorkspace,
   removeWorkspace,
   setActiveWorkspace,
-  setSelectedChannel,
-  setSelectedTime,
-  setSelectedZ,
   setCurrentIndex,
-  getDirHandle,
-  restoreDirHandle,
+  addPositionTag,
+  removePositionTag,
+  togglePositionTagFilter,
+  clearPositionTagFilters,
+  getWorkspaceVisiblePositionIndices,
   readPositionImage,
   type Workspace,
 } from "@/workspace/store"
-import { loadImageFile } from "@/lib/load-tif"
+import { parseSliceStringOverValues } from "@/lib/slices"
 import { startWithImage } from "@/register/store"
-
-const TIFF_RE = /^img_channel(\d+)_position(\d+)_time(\d+)_z(\d+)\.tif$/i
-
-function imageToDataURL(img: HTMLImageElement): string {
-  const canvas = document.createElement("canvas")
-  canvas.width = img.width
-  canvas.height = img.height
-  const ctx = canvas.getContext("2d")!
-  ctx.drawImage(img, 0, 0)
-  return canvas.toDataURL("image/png")
-}
-
-async function scanParentFolder(handle: FileSystemDirectoryHandle): Promise<{
-  positions: string[]
-  channels: number[]
-  times: number[]
-  zSlices: number[]
-} | null> {
-  const positions: string[] = []
-  for await (const entry of handle.values()) {
-    if (entry.kind === "directory" && /^Pos\d+$/i.test(entry.name)) {
-      positions.push(entry.name)
-    }
-  }
-  positions.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
-  if (positions.length === 0) return null
-
-  const channels = new Set<number>()
-  const times = new Set<number>()
-  const zSlices = new Set<number>()
-
-  const firstPos = await handle.getDirectoryHandle(positions[0])
-  for await (const entry of firstPos.values()) {
-    if (entry.kind !== "file") continue
-    const m = entry.name.match(TIFF_RE)
-    if (!m) continue
-    channels.add(parseInt(m[1], 10))
-    times.add(parseInt(m[3], 10))
-    zSlices.add(parseInt(m[4], 10))
-  }
-
-  return {
-    positions,
-    channels: [...channels].sort((a, b) => a - b),
-    times: [...times].sort((a, b) => a - b),
-    zSlices: [...zSlices].sort((a, b) => a - b),
-  }
-}
 
 export default function WorkspaceDashboard() {
   const { theme } = useTheme()
@@ -78,31 +30,28 @@ export default function WorkspaceDashboard() {
   const activeId = useStore(workspaceStore, (s) => s.activeId)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    for (const w of workspaces) {
-      if (!getDirHandle(w.id)) {
-        restoreDirHandle(w.id).then(() => {})
-      }
-    }
-  }, [workspaces])
+  const [opening, setOpening] = useState(false)
+  const [tagLabel, setTagLabel] = useState("")
+  const [tagSlice, setTagSlice] = useState("0")
 
   const handleAddWorkspace = useCallback(async () => {
     setError(null)
     setLoading(true)
     try {
-      const handle = await window.showDirectoryPicker()
-      const result = await scanParentFolder(handle)
+      const result = await window.mustudio.workspace.pickDirectory()
       if (!result || result.positions.length === 0) {
         setError("No Pos{N} subdirectories found. Open the output folder of mufile convert.")
         setLoading(false)
         return
       }
-      const { positions, channels, times, zSlices } = result
+      const { path, name, positions, channels, times, zSlices } = result
       const workspace: Workspace = {
         id: crypto.randomUUID(),
-        name: handle.name,
+        name,
+        rootPath: path,
         positions,
+        posTags: [],
+        positionFilterLabels: [],
         channels: channels.length > 0 ? channels : [0],
         times: times.length > 0 ? times : [0],
         zSlices: zSlices.length > 0 ? zSlices : [0],
@@ -111,7 +60,7 @@ export default function WorkspaceDashboard() {
         selectedZ: zSlices[0] ?? 0,
         currentIndex: 0,
       }
-      addWorkspace(workspace, handle)
+      addWorkspace(workspace)
     } catch (e) {
       if ((e as DOMException).name !== "AbortError") {
         setError("Failed to open folder.")
@@ -123,41 +72,78 @@ export default function WorkspaceDashboard() {
 
   const handleOpen = useCallback(async (ws: Workspace) => {
     setError(null)
-    let handle = getDirHandle(ws.id)
-    if (!handle) {
-      handle = await restoreDirHandle(ws.id)
-    }
-    if (!handle) {
-      setError("Could not restore folder. Remove and re-add this workspace.")
-      return
-    }
-    try {
-      await handle.requestPermission?.({ mode: "read" })
-    } catch {
-      setError("Permission denied. Try re-adding the workspace.")
+    if (!ws.rootPath) {
+      setError("Workspace path is unavailable. Remove and re-add this workspace.")
       return
     }
     setActiveWorkspace(ws.id)
   }, [])
 
-  const handlePositionClick = useCallback(async (ws: Workspace, posName: string, index: number) => {
+  const handlePositionSelect = useCallback((ws: Workspace, index: number) => {
+    setError(null)
     setCurrentIndex(ws.id, index)
-    const file = await readPositionImage(posName)
-    if (!file) {
-      setError("Could not read file. Try re-opening the folder.")
+  }, [])
+
+  const handleAddTag = useCallback((ws: Workspace) => {
+    const label = tagLabel.trim()
+    if (!label) {
+      setError("Tag label is required.")
       return
     }
+
+    let indices: number[] = []
     try {
-      const loaded = await loadImageFile(file)
-      const dataURL = imageToDataURL(loaded.img)
-      startWithImage(dataURL, loaded.baseName, loaded.width, loaded.height)
+      indices = parseSliceStringOverValues(tagSlice, ws.positions)
+    } catch (e) {
+      setError((e as Error).message)
+      return
+    }
+
+    // Compress parsed indices into contiguous ranges to match store tag model.
+    let runStart = indices[0]
+    let runEnd = indices[0]
+    for (let i = 1; i < indices.length; i += 1) {
+      const idx = indices[i]
+      if (idx === runEnd + 1) {
+        runEnd = idx
+        continue
+      }
+      addPositionTag(ws.id, label, runStart, runEnd)
+      runStart = idx
+      runEnd = idx
+    }
+    addPositionTag(ws.id, label, runStart, runEnd)
+
+    setError(null)
+    setTagLabel("")
+  }, [tagLabel, tagSlice])
+
+  const handleLoadSelected = useCallback(async (ws: Workspace) => {
+    if (opening) return
+    const pos = ws.positions[ws.currentIndex]
+    if (typeof pos !== "number") return
+    setError(null)
+    setOpening(true)
+    try {
+      const loaded = await readPositionImage(pos)
+      if (!loaded) {
+        setError("Could not read file. Try re-opening the folder.")
+        return
+      }
+      startWithImage(loaded.src, loaded.baseName, loaded.width, loaded.height)
       navigate("/register")
     } catch {
       setError("Failed to decode image.")
+    } finally {
+      setOpening(false)
     }
-  }, [navigate])
+  }, [navigate, opening])
 
   const activeWorkspace = activeId ? workspaces.find((w) => w.id === activeId) : null
+  const visibleIndices = activeWorkspace ? getWorkspaceVisiblePositionIndices(activeWorkspace) : []
+  const filterLabels = activeWorkspace
+    ? [...new Set(activeWorkspace.posTags.map((tag) => tag.label))].sort((a, b) => a.localeCompare(b))
+    : []
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-8 p-6">
@@ -168,8 +154,15 @@ export default function WorkspaceDashboard() {
       </div>
 
       <div className="w-full max-w-2xl space-y-4 backdrop-blur-sm bg-background/80 rounded-lg border p-6">
+        <div className="text-center">
+          <h1 className="text-4xl tracking-tight" style={{ fontFamily: "\"Bitcount\", monospace" }}>
+            MuStudio
+          </h1>
+          <div className="mt-3 border-t border-border/70" />
+        </div>
+
         {activeWorkspace ? (
-          <>
+            <>
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="icon-sm" onClick={() => setActiveWorkspace(null)}>
                 <ArrowLeft className="size-4" />
@@ -177,64 +170,150 @@ export default function WorkspaceDashboard() {
               <h2 className="text-lg font-medium">{activeWorkspace.name}</h2>
             </div>
 
-            <div className="flex flex-wrap gap-4">
-              <div>
-                <label className="text-sm text-muted-foreground mr-2">Channel</label>
-                <select
-                  className="border rounded px-2 py-1 bg-background"
-                  value={activeWorkspace.selectedChannel}
-                  onChange={(e) => setSelectedChannel(activeWorkspace.id, Number(e.target.value))}
-                >
-                  {activeWorkspace.channels.map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground mr-2">Time</label>
-                <select
-                  className="border rounded px-2 py-1 bg-background"
-                  value={activeWorkspace.selectedTime}
-                  onChange={(e) => setSelectedTime(activeWorkspace.id, Number(e.target.value))}
-                >
-                  {activeWorkspace.times.map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground mr-2">Z</label>
-                <select
-                  className="border rounded px-2 py-1 bg-background"
-                  value={activeWorkspace.selectedZ}
-                  onChange={(e) => setSelectedZ(activeWorkspace.id, Number(e.target.value))}
-                >
-                  {activeWorkspace.zSlices.map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
             <div className="space-y-1 max-h-64 overflow-y-auto">
-              {activeWorkspace.positions.map((posName, i) => (
-                <button
-                  key={posName}
-                  onClick={() => handlePositionClick(activeWorkspace, posName, i)}
-                  className={`w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
-                    i === activeWorkspace.currentIndex
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
-                  }`}
-                >
-                  <span className="text-muted-foreground mr-2">{i + 1}.</span>
-                  {posName}
-                </button>
-              ))}
+              <div className="flex flex-wrap items-end gap-2 rounded-md border p-2 mb-2 bg-background/60">
+                <div className="min-w-40 flex-1">
+                  <label className="text-xs text-muted-foreground">Tag</label>
+                  <input
+                    type="text"
+                    value={tagLabel}
+                    onChange={(e) => setTagLabel(e.target.value)}
+                    placeholder="sample-a"
+                    className="w-full h-8 px-2 rounded border bg-background text-sm"
+                  />
+                </div>
+                <div className="min-w-48 flex-1">
+                  <label className="text-xs text-muted-foreground">Slice</label>
+                  <input
+                    type="text"
+                    value={tagSlice}
+                    onChange={(e) => setTagSlice(e.target.value)}
+                    placeholder="all | 140 | 140:160:5"
+                    className="w-full h-8 px-2 rounded border bg-background text-sm"
+                  />
+                </div>
+                <Button size="sm" onClick={() => handleAddTag(activeWorkspace)}>
+                  Add tag slice
+                </Button>
+                <div className="min-w-48 flex-1">
+                  <label className="text-xs text-muted-foreground">Filter</label>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded border text-xs ${
+                        activeWorkspace.positionFilterLabels.length === 0 ? "bg-primary/10 border-primary" : "bg-background"
+                      }`}
+                      onClick={() => clearPositionTagFilters(activeWorkspace.id)}
+                    >
+                      All
+                    </button>
+                    {filterLabels.map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className={`px-2 py-1 rounded border text-xs ${
+                          activeWorkspace.positionFilterLabels.includes(label)
+                            ? "bg-primary/10 border-primary"
+                            : "bg-background"
+                        }`}
+                        onClick={() => togglePositionTagFilter(activeWorkspace.id, label)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleIndices.map((i) => {
+                  const pos = activeWorkspace.positions[i]
+                  const tags = activeWorkspace.posTags.filter((tag) => i >= tag.startIndex && i <= tag.endIndex)
+                  return (
+                    <div
+                      key={pos}
+                      onClick={() => handlePositionSelect(activeWorkspace, i)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          handlePositionSelect(activeWorkspace, i)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={opening ? -1 : 0}
+                      aria-disabled={opening}
+                      className={`text-left rounded border text-sm transition-colors ${
+                        i === activeWorkspace.currentIndex
+                          ? "border-primary bg-primary/10"
+                          : "hover:bg-accent"
+                      }`}
+                    >
+                      <div className="px-3 py-2">
+                        <span className="font-medium">{pos}</span>
+                      </div>
+                      <div className="border-t px-3 py-2 flex flex-wrap gap-1 min-h-9">
+                        {tags.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">No tags</span>
+                        ) : (
+                          tags.map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border bg-background"
+                            >
+                              {tag.label}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  removePositionTag(activeWorkspace.id, tag.id)
+                                }}
+                                className="text-muted-foreground hover:text-foreground"
+                                aria-label={`Remove ${tag.label} tag`}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </>
-        ) : (
-          <>
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={() => navigate("/see")}
+                disabled={opening}
+                className="whitespace-normal leading-tight"
+              >
+                <span className="text-center">
+                  load in
+                  <br />
+                  musee
+                </span>
+              </Button>
+              <Button
+                onClick={() => handleLoadSelected(activeWorkspace)}
+                disabled={opening || visibleIndices.length === 0}
+                className="whitespace-normal leading-tight"
+              >
+                <span className="text-center">
+                  {opening ? (
+                    "Loading..."
+                  ) : (
+                    <>
+                      load in
+                      <br />
+                      muregister
+                    </>
+                  )}
+                </span>
+              </Button>
+            </div>
+            </>
+          ) : (
+            <>
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-medium">Workspaces</h2>
               <Button onClick={handleAddWorkspace} disabled={loading}>
@@ -274,8 +353,8 @@ export default function WorkspaceDashboard() {
                 ))}
               </div>
             )}
-          </>
-        )}
+            </>
+          )}
 
         {error && <p className="text-destructive text-sm">{error}</p>}
       </div>

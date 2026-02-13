@@ -1,5 +1,3 @@
-import * as UTIF from "utif2"
-
 export interface LoadedImage {
   img: HTMLImageElement
   baseName: string
@@ -11,51 +9,112 @@ function stripExtension(filename: string): string {
   return filename.replace(/\.[^.]+$/, "")
 }
 
+function canvasToObjectUrl(canvas: HTMLCanvasElement): Promise<string> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Failed to encode image"))
+        return
+      }
+      resolve(URL.createObjectURL(blob))
+    }, "image/png")
+  })
+}
+
+interface WorkerDecodeResult {
+  width: number
+  height: number
+  rgba: ArrayBuffer
+}
+
+interface DecodeSuccessMessage {
+  id: number
+  ok: true
+  width: number
+  height: number
+  rgba: ArrayBuffer
+}
+
+interface DecodeFailureMessage {
+  id: number
+  ok: false
+  error: string
+}
+
+type DecodeMessage = DecodeSuccessMessage | DecodeFailureMessage
+
+let decodeWorker: Worker | null = null
+let nextDecodeId = 1
+const pendingDecodes = new Map<
+  number,
+  { resolve: (value: WorkerDecodeResult) => void; reject: (reason?: unknown) => void }
+>()
+
+function getDecodeWorker(): Worker {
+  if (decodeWorker) return decodeWorker
+  decodeWorker = new Worker(new URL("./tiff-decode.worker.ts", import.meta.url), { type: "module" })
+  decodeWorker.onmessage = (event: MessageEvent<DecodeMessage>) => {
+    const message = event.data
+    const pending = pendingDecodes.get(message.id)
+    if (!pending) return
+    pendingDecodes.delete(message.id)
+
+    if (!message.ok) {
+      pending.reject(new Error(message.error))
+      return
+    }
+
+    pending.resolve({
+      width: message.width,
+      height: message.height,
+      rgba: message.rgba,
+    })
+  }
+  decodeWorker.onerror = (event) => {
+    for (const pending of pendingDecodes.values()) {
+      pending.reject(new Error(event.message || "TIFF decode worker failed"))
+    }
+    pendingDecodes.clear()
+  }
+  return decodeWorker
+}
+
+function decodeTiffInWorker(buffer: ArrayBuffer): Promise<WorkerDecodeResult> {
+  return new Promise((resolve, reject) => {
+    const id = nextDecodeId++
+    pendingDecodes.set(id, { resolve, reject })
+    const worker = getDecodeWorker()
+    worker.postMessage({ id, buffer }, [buffer])
+  })
+}
+
 /**
  * Decode a TIF/TIFF file into an HTMLImageElement.
  * Returns a promise that resolves with the decoded image info.
  */
-export function loadTifFromFile(file: File): Promise<LoadedImage> {
-  return new Promise((resolve, reject) => {
-    const baseName = stripExtension(file.name)
-    const reader = new FileReader()
+export async function loadTifFromFile(file: File): Promise<LoadedImage> {
+  const baseName = stripExtension(file.name)
+  const buffer = await file.arrayBuffer()
+  const { rgba, width, height } = await decodeTiffInWorker(buffer)
+  const pixels = new Uint8ClampedArray(rgba)
 
-    reader.onerror = () => reject(new Error("Failed to read file"))
+  const canvas = document.createElement("canvas")
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext("2d")!
+  const imageData = new ImageData(pixels, width, height)
+  ctx.putImageData(imageData, 0, 0)
 
-    reader.onload = (e) => {
-      try {
-        const buffer = e.target?.result as ArrayBuffer
-        const ifds = UTIF.decode(buffer)
-        if (ifds.length === 0) {
-          reject(new Error("Could not decode TIFF file"))
-          return
-        }
-        UTIF.decodeImage(buffer, ifds[0])
-        const rgba = UTIF.toRGBA8(ifds[0])
-        const w = ifds[0].width
-        const h = ifds[0].height
+  const objectUrl = await canvasToObjectUrl(canvas)
 
-        const canvas = document.createElement("canvas")
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext("2d")!
-        const imageData = new ImageData(
-          new Uint8ClampedArray(rgba.buffer as ArrayBuffer),
-          w,
-          h
-        )
-        ctx.putImageData(imageData, 0, 0)
-
-        const img = new Image()
-        img.onload = () => resolve({ img, baseName, width: w, height: h })
-        img.onerror = () => reject(new Error("Failed to create image from decoded TIFF"))
-        img.src = canvas.toDataURL("image/png")
-      } catch {
-        reject(new Error("Failed to decode TIFF file"))
-      }
+  return await new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ img, baseName, width, height })
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error("Failed to create image from decoded TIFF"))
     }
-
-    reader.readAsArrayBuffer(file)
+    img.src = objectUrl
   })
 }
 

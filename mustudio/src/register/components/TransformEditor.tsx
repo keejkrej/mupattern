@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { Slider } from "@/components/ui/slider"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -56,7 +57,7 @@ function SliderRow({
   )
 }
 
-export function TransformEditor({ transform, onUpdate }: TransformEditorProps) {
+export const TransformEditor = memo(function TransformEditor({ transform, onUpdate }: TransformEditorProps) {
   return (
     <div className="space-y-3">
       <SliderRow label="Translate X" value={transform.tx} min={-500} max={500} step={0.5} unit="px"
@@ -65,4 +66,4 @@ export function TransformEditor({ transform, onUpdate }: TransformEditorProps) {
         onChange={(v) => onUpdate({ ty: v })} />
     </div>
   )
-}
+})

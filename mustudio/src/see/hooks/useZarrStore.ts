@@ -1,131 +1,112 @@
-import { useState, useCallback, useEffect } from "react";
-import { DirectoryStore } from "@/see/lib/directory-store";
-import { listPositions, discoverStore, type StoreIndex } from "@/see/lib/zarr";
-import { saveHandle, loadHandle } from "@/lib/idb-handle";
-import { viewerStore, setSelectedPositions } from "@/see/store";
+import { useState, useEffect } from "react";
+import { useStore } from "@tanstack/react-store";
+import { createZarrStore, discoverStore, type StoreIndex, type ZarrStore } from "@/see/lib/zarr";
+import {
+  workspaceStore,
+} from "@/workspace/store";
+import { setSelectedPositions, setSelectedPos, setC, setZ } from "@/see/store";
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 export function useZarrStore() {
-  const [store, setStore] = useState<DirectoryStore | null>(null);
-  const [dirHandle, setDirHandle] =
-    useState<FileSystemDirectoryHandle | null>(null);
+  const activeWorkspace = useStore(workspaceStore, (s) => {
+    const { activeId, workspaces } = s;
+    if (!activeId) return null;
+    return workspaces.find((w) => w.id === activeId) ?? null;
+  });
+  const loadKey = useStore(workspaceStore, (s) => {
+    const { activeId, workspaces } = s;
+    if (!activeId) return "none";
+    const w = workspaces.find((item) => item.id === activeId);
+    if (!w) return "none";
+    const pos = w.positions[w.currentIndex];
+    return `${w.id}:${w.rootPath}:${w.currentIndex}:${pos ?? "none"}`;
+  });
+  const [store, setStore] = useState<ZarrStore | null>(null);
   const [index, setIndex] = useState<StoreIndex | null>(null);
-  const [availablePositions, setAvailablePositions] = useState<string[] | null>(
-    null
-  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** Try to restore a previously-saved directory handle on mount. */
+  /** Auto-load crops.zarr from the active workspace and current position. */
   useEffect(() => {
     let cancelled = false;
 
-    async function tryRestore() {
-      const handle = await loadHandle("crops-zarr");
-      if (!handle || cancelled) return;
-
-      // Re-request read permission (browser may prompt the user)
-      const perm = await handle.requestPermission({ mode: "read" });
-      if (perm !== "granted" || cancelled) return;
-
-      const ds = new DirectoryStore(handle);
-      const positions = await listPositions(handle);
-      if (positions.length === 0 || cancelled) return;
-
-      setDirHandle(handle);
-      setStore(ds);
-      setAvailablePositions(positions);
-
-      // If we had previously selected positions, auto-reload them
-      const prevSelected = viewerStore.state.selectedPositions;
-      if (prevSelected.length > 0) {
-        // Filter to only positions that still exist
-        const valid = prevSelected.filter((p) => positions.includes(p));
-        if (valid.length > 0 && !cancelled) {
-          setLoading(true);
-          try {
-            const idx = await discoverStore(handle, ds, valid);
-            if (!cancelled && idx.positions.length > 0) {
-              setIndex(idx);
-            }
-          } catch {
-            // fall through to position picker
-          } finally {
-            if (!cancelled) setLoading(false);
-          }
-        }
-      }
-    }
-
-    tryRestore();
-    return () => { cancelled = true; };
-  }, []);
-
-  /** Phase 1: Open directory and quickly list available positions. */
-  const openDirectory = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      setIndex(null);
-      setAvailablePositions(null);
-
-      const handle = await window.showDirectoryPicker({ mode: "read" });
-      const ds = new DirectoryStore(handle);
-      const positions = await listPositions(handle);
-
-      if (positions.length === 0) {
-        setError("No positions found. Expected layout: pos/{id}/crop/{id}/");
+    async function loadFromWorkspace() {
+      if (!activeWorkspace) {
+        setStore(null);
+        setIndex(null);
+        setError("No active workspace.");
+        setLoading(false);
         return;
       }
 
-      // Persist handle for next reload
-      await saveHandle("crops-zarr", handle);
+      setLoading(true);
+      setError(null);
 
-      setDirHandle(handle);
-      setStore(ds);
-      setAvailablePositions(positions);
-    } catch (e) {
-      if ((e as DOMException).name !== "AbortError") {
-        setError(String(e));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /** Phase 2: Load crops for the selected positions only. */
-  const loadPositions = useCallback(
-    async (selected: string[]) => {
-      if (!dirHandle || !store) return;
       try {
-        setLoading(true);
-        setError(null);
-        const idx = await discoverStore(dirHandle, store, selected);
+        if (!activeWorkspace.rootPath) {
+          throw new Error("Workspace path is unavailable. Re-open the workspace.");
+        }
+        const ds = createZarrStore(activeWorkspace.rootPath);
 
-        if (idx.positions.length === 0) {
-          setError("No crops found in the selected positions.");
-          return;
+        const workspacePos = activeWorkspace.positions[activeWorkspace.currentIndex];
+        if (typeof workspacePos !== "number") {
+          throw new Error("No position selected in workspace.");
         }
 
-        // Persist which positions were selected
-        setSelectedPositions(selected);
+        const resolvedPosId = String(workspacePos);
+        const idx: StoreIndex = await withTimeout(
+          discoverStore(
+            activeWorkspace.rootPath,
+            [resolvedPosId],
+            { metadataMode: "fast" }
+          ),
+          12000,
+          `Timed out loading crops at pos/${resolvedPosId}/crop.`
+        );
+
+        if (idx.positions.length === 0) {
+          throw new Error(`No crops found at path pos/${resolvedPosId}/crop.`);
+        }
+
+        if (cancelled) return;
+        setStore(ds);
         setIndex(idx);
+        setSelectedPositions([resolvedPosId]);
+        setSelectedPos(resolvedPosId);
+        setC(activeWorkspace.selectedChannel);
+        setZ(activeWorkspace.selectedZ);
       } catch (e) {
-        setError(String(e));
+        if (!cancelled) {
+          setStore(null);
+          setIndex(null);
+          setError(e instanceof Error ? e.message : String(e));
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    },
-    [dirHandle, store]
-  );
+    }
+
+    void loadFromWorkspace();
+    return () => { cancelled = true; };
+  }, [activeWorkspace, loadKey]);
 
   return {
     store,
-    dirHandle,
     index,
-    availablePositions,
     loading,
     error,
-    openDirectory,
-    loadPositions,
   };
 }

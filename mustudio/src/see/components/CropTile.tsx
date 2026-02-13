@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, memo } from "react";
-import type { DirectoryStore } from "@/see/lib/directory-store";
-import { loadFrame } from "@/see/lib/zarr";
+import { loadFrame, type ZarrStore } from "@/see/lib/zarr";
 import { renderUint16ToCanvas, autoContrast } from "@/see/lib/render";
 import type { CropInfo } from "@/see/lib/zarr";
 
 interface CropTileProps {
-  store: DirectoryStore;
+  store: ZarrStore;
   crop: CropInfo;
   t: number;
   contrastMin: number | null;
