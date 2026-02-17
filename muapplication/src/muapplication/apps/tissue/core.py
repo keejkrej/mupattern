@@ -282,13 +282,22 @@ def run_analyze(
 
 
 def run_plot(input_csv: Path, output_dir: Path, gfp_threshold: float) -> None:
-    """Plot GFP+ count and median (total − area×background) per crop over time, one color per crop. Writes two square plots into output_dir: gfp_count.png and median_fluorescence.png. For accurate total fluorescence use the expression module."""
+    """Plot GFP+ count and median (total − area×background) per crop over time. All crop traces in grey; red trace = median across crops. Writes two square plots into output_dir: gfp_count.png and median_fluorescence.png. For accurate total fluorescence use the expression module."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
 
     import pandas as pd
+
+    def _style_ax(ax: plt.Axes) -> None:
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.tick_params(axis="both", labelsize=12)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=14)
+        ax.set_ylabel(ax.get_ylabel(), fontsize=14)
+        ax.set_title(ax.get_title(), fontsize=16)
 
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -301,12 +310,14 @@ def run_plot(input_csv: Path, output_dir: Path, gfp_threshold: float) -> None:
     gfp = df[df["mean_above_bg"] > gfp_threshold]
     crops = sorted(gfp["crop"].unique())
     size = 6  # squareish
+    grey = (0.5, 0.5, 0.5, 1.0)
 
     if not crops:
         fig, ax = plt.subplots(figsize=(size, size))
         ax.set_ylabel("Number of GFP+ cells")
-        ax.set_title(f"GFP+ cells per crop (threshold={gfp_threshold})")
+        ax.set_title("GFP+ cells per crop")
         ax.set_xlabel("t")
+        _style_ax(ax)
         plt.tight_layout()
         plt.savefig(count_path, dpi=150, bbox_inches="tight")
         plt.close()
@@ -314,38 +325,50 @@ def run_plot(input_csv: Path, output_dir: Path, gfp_threshold: float) -> None:
         ax.set_ylabel("Median (total − area×background)")
         ax.set_title(f"Median fluorescence per crop, GFP+ (threshold={gfp_threshold})")
         ax.set_xlabel("t")
+        _style_ax(ax)
         plt.tight_layout()
         plt.savefig(fluo_path, dpi=150, bbox_inches="tight")
         plt.close()
         return
 
-    cmap = plt.get_cmap("tab10" if len(crops) <= 10 else "tab20")
-    colors = [cmap(i % cmap.N) for i in range(len(crops))]
     median_per_t = gfp.groupby(["crop", "t"])["fluo_above_bg"].median().reset_index()
     median_per_t.columns = ["crop", "t", "median_above_bg"]
 
+    # GFP count: per-crop traces in grey, median across crops in red
     fig, ax = plt.subplots(figsize=(size, size))
-    for i, crop in enumerate(crops):
-        color = colors[i]
+    count_rows = []
+    for crop in crops:
         crop_gfp = gfp[gfp["crop"] == crop]
         per_t_count = crop_gfp.groupby("t")["cell"].count().reset_index()
         per_t_count.columns = ["t", "n_gfp"]
-        ax.plot(per_t_count["t"], per_t_count["n_gfp"], color=color, linestyle="-")
+        ax.plot(per_t_count["t"], per_t_count["n_gfp"], color=grey, linestyle="-")
+        for _, row in per_t_count.iterrows():
+            count_rows.append({"t": row["t"], "crop": crop, "n_gfp": row["n_gfp"]})
+    count_df = pd.DataFrame(count_rows)
+    if not count_df.empty:
+        median_count = count_df.groupby("t")["n_gfp"].median().reset_index()
+        median_count.columns = ["t", "n_gfp"]
+        ax.plot(median_count["t"], median_count["n_gfp"], color="red", linestyle="-", linewidth=2)
     ax.set_ylabel("Number of GFP+ cells")
-    ax.set_title(f"GFP+ cells per crop (threshold={gfp_threshold})")
+    ax.set_title("GFP+ cells per crop")
     ax.set_xlabel("t")
+    _style_ax(ax)
     plt.tight_layout()
     plt.savefig(count_path, dpi=150, bbox_inches="tight")
     plt.close()
 
+    # Median fluorescence: per-crop traces in grey, median across crops in red
     fig, ax = plt.subplots(figsize=(size, size))
-    for i, crop in enumerate(crops):
-        color = colors[i]
+    for crop in crops:
         crop_med = median_per_t[median_per_t["crop"] == crop]
-        ax.plot(crop_med["t"], crop_med["median_above_bg"], color=color, linestyle="-")
+        ax.plot(crop_med["t"], crop_med["median_above_bg"], color=grey, linestyle="-")
+    median_fluo = median_per_t.groupby("t")["median_above_bg"].median().reset_index()
+    median_fluo.columns = ["t", "median_above_bg"]
+    ax.plot(median_fluo["t"], median_fluo["median_above_bg"], color="red", linestyle="-", linewidth=2)
     ax.set_xlabel("t")
     ax.set_ylabel("Median (total − area×background)")
     ax.set_title(f"Median fluorescence per crop, GFP+ (threshold={gfp_threshold})")
+    _style_ax(ax)
     plt.tight_layout()
     plt.savefig(fluo_path, dpi=150, bbox_inches="tight")
     plt.close()

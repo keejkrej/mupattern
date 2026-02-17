@@ -53,16 +53,26 @@ def run_analyze(
 
 
 def run_plot(input_csv: Path, output_dir: Path) -> None:
-    """Plot raw intensity and background-corrected total fluor per crop over time. Writes two square plots into output_dir: intensity.png and background_corrected_total_fluor.png (same style as tissue plot)."""
+    """Plot raw intensity, background-corrected total fluor, and max-normalized corrected per crop over time. Writes three square plots into output_dir: intensity.png, background_corrected_total_fluor.png, normalized_corrected.png (same style as tissue plot)."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+
+    def _style_ax(ax: plt.Axes) -> None:
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.tick_params(axis="both", labelsize=12)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=14)
+        ax.set_ylabel(ax.get_ylabel(), fontsize=14)
+        ax.set_title(ax.get_title(), fontsize=16)
 
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     raw_path = output_dir / "intensity.png"
     sub_path = output_dir / "background_corrected_total_fluor.png"
+    norm_path = output_dir / "normalized_corrected.png"
 
     df = pd.read_csv(input_csv, dtype={"crop": str})
     df["intensity_above_bg"] = df["intensity"] - df["area"] * df["background"]
@@ -74,6 +84,7 @@ def run_plot(input_csv: Path, output_dir: Path) -> None:
         ax.set_ylabel("Intensity")
         ax.set_title("Raw intensity per crop")
         ax.set_xlabel("t")
+        _style_ax(ax)
         plt.tight_layout()
         plt.savefig(raw_path, dpi=150, bbox_inches="tight")
         plt.close()
@@ -81,8 +92,17 @@ def run_plot(input_csv: Path, output_dir: Path) -> None:
         ax.set_ylabel("Background-corrected total fluor")
         ax.set_title("Background-corrected total fluor per crop")
         ax.set_xlabel("t")
+        _style_ax(ax)
         plt.tight_layout()
         plt.savefig(sub_path, dpi=150, bbox_inches="tight")
+        plt.close()
+        fig, ax = plt.subplots(figsize=(size, size))
+        ax.set_ylabel("Normalized (max=1)")
+        ax.set_title("Normalized corrected total fluor per crop")
+        ax.set_xlabel("t")
+        _style_ax(ax)
+        plt.tight_layout()
+        plt.savefig(norm_path, dpi=150, bbox_inches="tight")
         plt.close()
         return
 
@@ -96,6 +116,7 @@ def run_plot(input_csv: Path, output_dir: Path) -> None:
     ax.set_ylabel("Intensity")
     ax.set_title("Raw intensity per crop")
     ax.set_xlabel("t")
+    _style_ax(ax)
     plt.tight_layout()
     plt.savefig(raw_path, dpi=150, bbox_inches="tight")
     plt.close()
@@ -107,6 +128,22 @@ def run_plot(input_csv: Path, output_dir: Path) -> None:
     ax.set_ylabel("Background-corrected total fluor")
     ax.set_title("Background-corrected total fluor per crop")
     ax.set_xlabel("t")
+    _style_ax(ax)
     plt.tight_layout()
     plt.savefig(sub_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    fig, ax = plt.subplots(figsize=(size, size))
+    for i, crop in enumerate(crops):
+        group = df[df["crop"] == crop].sort_values("t")
+        y = group["intensity_above_bg"].values
+        m = y.max()
+        normalized = y / m if m > 0 else y
+        ax.plot(group["t"], normalized, color=colors[i], linestyle="-")
+    ax.set_ylabel("Normalized (max=1)")
+    ax.set_title("Normalized corrected total fluor per crop")
+    ax.set_xlabel("t")
+    _style_ax(ax)
+    plt.tight_layout()
+    plt.savefig(norm_path, dpi=150, bbox_inches="tight")
     plt.close()
