@@ -122,11 +122,15 @@ async function hydrateWorkspaceStoreFromDisk(): Promise<void> {
   try {
     const saved = await workspaceStateApi.load()
     if (saved && isWorkspaceStoreState(saved)) {
-      // Always start on the workspace landing/list screen after app restart.
+      const workspaces = saved.workspaces.map((workspace) => normalizeWorkspace(workspace))
+      const validActiveId =
+        saved.activeId && workspaces.some((w) => w.id === saved.activeId)
+          ? saved.activeId
+          : null
       workspaceStore.setState({
         ...saved,
-        workspaces: saved.workspaces.map((workspace) => normalizeWorkspace(workspace)),
-        activeId: null,
+        workspaces,
+        activeId: validActiveId,
       })
     }
   } catch {

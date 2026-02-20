@@ -29,10 +29,10 @@ import {
   setShowSpots as persistShowSpots,
   setShowMasks as persistShowMasks,
 } from "@/see/store";
+import { AppHeader } from "@/components/AppHeader";
 import { LeftSliceSidebar } from "@/see/components/LeftSliceSidebar";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import {
   ChevronLeft,
   ChevronRight,
@@ -42,8 +42,6 @@ import {
   Pause,
   SkipBack,
   SkipForward,
-  Sun,
-  Moon,
   Download,
   Upload,
   Pencil,
@@ -51,7 +49,6 @@ import {
   EyeOff,
   Crosshair,
 } from "lucide-react";
-import { useTheme } from "@/components/ThemeProvider";
 
 const PAGE_SIZE = 9; // 3x3
 
@@ -61,8 +58,6 @@ interface ViewerProps {
 }
 
 export function Viewer({ store, index }: ViewerProps) {
-  const { theme, toggleTheme } = useTheme();
-
   // Persisted state from store
   const selectedPos = useStore(viewerStore, (s) => s.selectedPos);
   const t = useStore(viewerStore, (s) => s.t);
@@ -391,35 +386,11 @@ export function Viewer({ store, index }: ViewerProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div>
-          <h1
-            className="text-4xl tracking-tight"
-            style={{ fontFamily: '"Bitcount", monospace' }}
-          >
-            MuSee
-          </h1>
-          <p className="text-base text-muted-foreground">
-            Micropattern crop viewer
-          </p>
-        </div>
-        <div className="flex items-center gap-6">
-          <span className="text-sm text-muted-foreground">
-            {crops.length} crops
-          </span>
-          <div className="mx-1 h-4 w-px bg-border" />
-          <div className="flex items-center gap-2">
-            <Sun className="size-3.5 text-muted-foreground" />
-            <Switch
-              checked={theme === "dark"}
-              onCheckedChange={toggleTheme}
-              aria-label="Toggle dark mode"
-            />
-            <Moon className="size-3.5 text-muted-foreground" />
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title="See"
+        subtitle="Micropattern crop viewer"
+        backTo="/workspace"
+      />
       {frameLoadError && (
         <div className="px-4 py-2 text-xs text-destructive border-b">
           {frameLoadError}
@@ -627,7 +598,11 @@ export function Viewer({ store, index }: ViewerProps) {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-center gap-2 px-4 py-2 border-t">
+      <div className="flex items-center justify-center gap-4 px-4 py-2 border-t">
+        <span className="text-sm text-muted-foreground">
+          {crops.length} crops
+        </span>
+        <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon-xs" disabled={clampedPage === 0} onClick={() => setPage(0)}>
           <SkipBack className="size-3" />
         </Button>
@@ -643,6 +618,7 @@ export function Viewer({ store, index }: ViewerProps) {
         <Button variant="ghost" size="icon-xs" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
           <SkipForward className="size-3" />
         </Button>
+        </div>
       </div>
     </div>
   );

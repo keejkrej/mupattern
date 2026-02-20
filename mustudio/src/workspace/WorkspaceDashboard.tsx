@@ -17,11 +17,9 @@ import {
   togglePositionTagFilter,
   clearPositionTagFilters,
   getWorkspaceVisiblePositionIndices,
-  readPositionImage,
   type Workspace,
 } from "@/workspace/store"
 import { parseSliceStringOverValues } from "@/lib/slices"
-import { startWithImage } from "@/register/store"
 
 export default function WorkspaceDashboard() {
   const { theme } = useTheme()
@@ -30,7 +28,6 @@ export default function WorkspaceDashboard() {
   const activeId = useStore(workspaceStore, (s) => s.activeId)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [opening, setOpening] = useState(false)
   const [tagLabel, setTagLabel] = useState("")
   const [tagSlice, setTagSlice] = useState("0")
 
@@ -118,26 +115,10 @@ export default function WorkspaceDashboard() {
     setTagLabel("")
   }, [tagLabel, tagSlice])
 
-  const handleLoadSelected = useCallback(async (ws: Workspace) => {
-    if (opening) return
-    const pos = ws.positions[ws.currentIndex]
-    if (typeof pos !== "number") return
+  const handleOpenRegister = useCallback(() => {
     setError(null)
-    setOpening(true)
-    try {
-      const loaded = await readPositionImage(pos)
-      if (!loaded) {
-        setError("Could not read file. Try re-opening the folder.")
-        return
-      }
-      startWithImage(loaded.src, loaded.baseName, loaded.width, loaded.height)
-      navigate("/register")
-    } catch {
-      setError("Failed to decode image.")
-    } finally {
-      setOpening(false)
-    }
-  }, [navigate, opening])
+    navigate("/register")
+  }, [navigate])
 
   const activeWorkspace = activeId ? workspaces.find((w) => w.id === activeId) : null
   const visibleIndices = activeWorkspace ? getWorkspaceVisiblePositionIndices(activeWorkspace) : []
@@ -240,8 +221,7 @@ export default function WorkspaceDashboard() {
                         }
                       }}
                       role="button"
-                      tabIndex={opening ? -1 : 0}
-                      aria-disabled={opening}
+                      tabIndex={0}
                       className={`text-left rounded border text-sm transition-colors ${
                         i === activeWorkspace.currentIndex
                           ? "border-primary bg-primary/10"
@@ -284,30 +264,23 @@ export default function WorkspaceDashboard() {
             <div className="flex justify-end gap-2">
               <Button
                 onClick={() => navigate("/see")}
-                disabled={opening}
                 className="whitespace-normal leading-tight"
               >
                 <span className="text-center">
                   load in
                   <br />
-                  musee
+                  See
                 </span>
               </Button>
               <Button
-                onClick={() => handleLoadSelected(activeWorkspace)}
-                disabled={opening || visibleIndices.length === 0}
+                onClick={handleOpenRegister}
+                disabled={visibleIndices.length === 0}
                 className="whitespace-normal leading-tight"
               >
                 <span className="text-center">
-                  {opening ? (
-                    "Loading..."
-                  ) : (
-                    <>
-                      load in
-                      <br />
-                      muregister
-                    </>
-                  )}
+                  load in
+                  <br />
+                  Register
                 </span>
               </Button>
             </div>

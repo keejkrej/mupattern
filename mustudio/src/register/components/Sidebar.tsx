@@ -24,11 +24,6 @@ interface SidebarProps {
   onTransformUpdate: (updates: Partial<Transform>) => void
   patternOpacity: number
   onPatternOpacityChange: (v: number) => void
-  onReset: () => void
-  hasImage: boolean
-  hasDetectedPoints: boolean
-  onDetect: () => void
-  onFitGrid: (basisAngle: number) => void
 }
 
 function Section({
@@ -68,11 +63,6 @@ export function Sidebar({
   onTransformUpdate,
   patternOpacity,
   onPatternOpacityChange,
-  onReset,
-  hasImage,
-  hasDetectedPoints,
-  onDetect,
-  onFitGrid,
 }: SidebarProps) {
   const configInputRef = useRef<HTMLInputElement>(null)
 
@@ -147,9 +137,6 @@ export function Sidebar({
           <Button variant="secondary" size="sm" className="w-full h-7 text-base" onClick={() => { void handleSaveConfig() }}>
             Save config
           </Button>
-          <Button variant="secondary" size="sm" className="w-full h-7 text-base" onClick={onReset}>
-            Reset
-          </Button>
         </div>
       </Section>
 
@@ -199,39 +186,6 @@ export function Sidebar({
           onUpdate={onTransformUpdate}
         />
       </Section>
-
-      <Separator />
-
-      <div className="space-y-2 pt-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full h-7 text-base"
-          disabled={!hasImage}
-          onClick={onDetect}
-        >
-          Detect cells
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full h-7 text-base"
-          disabled={!hasDetectedPoints}
-          onClick={() => onFitGrid(Math.PI / 2)}
-        >
-          Auto square (a=b)
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full h-7 text-base"
-          disabled={!hasDetectedPoints}
-          onClick={() => onFitGrid(Math.PI / 3)}
-        >
-          Auto hex (a=b)
-        </Button>
-      </div>
-
     </aside>
   )
 }

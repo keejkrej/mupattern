@@ -9,10 +9,21 @@ import {
   type Lattice,
 } from "@/register/types"
 
+/** Workspace reference to reload image on page reload (small, persisted) */
+export interface ImageSource {
+  workspaceId: string
+  position: number
+  channel: number
+  time: number
+  z: number
+}
+
 export interface AppState {
   started: boolean
   /** Data URL of the loaded image, or null if "start fresh" */
   imageDataURL: string | null
+  /** Workspace reference to reload from; not the image data */
+  imageSource: ImageSource | null
   imageBaseName: string
   canvasSize: { width: number; height: number }
   pattern: PatternConfigUm
@@ -25,28 +36,41 @@ export interface AppState {
 const defaultState: AppState = {
   started: false,
   imageDataURL: null,
+  imageSource: null,
   imageBaseName: "pattern",
   canvasSize: { width: 2048, height: 2048 },
   pattern: DEFAULT_PATTERN_UM,
   transform: DEFAULT_TRANSFORM,
   calibration: DEFAULT_CALIBRATION,
-  patternOpacity: 0.7,
+  patternOpacity: 0.5,
   detectedPoints: null,
 }
 
 export const appStore = createPersistedStore<AppState>("mustudio-register-app", defaultState, {
   serialize: (state) => ({
     ...state,
-    // Avoid persisting large base64 payloads that can block the UI thread.
+    // Never persist image payload; persist imageSource so reload can fetch from workspace
     imageDataURL: null,
-    started: state.imageDataURL ? false : state.started,
+    started: state.imageDataURL ? true : state.started,
   }),
   debounceMs: 500,
   deserialize: (raw) => {
     const persisted = (raw as Partial<AppState>) ?? {}
+    const src = persisted.imageSource
+    const imageSource =
+      src &&
+      typeof src.workspaceId === "string" &&
+      typeof src.position === "number" &&
+      typeof src.channel === "number" &&
+      typeof src.time === "number" &&
+      typeof src.z === "number"
+        ? (src as ImageSource)
+        : null
     return {
       ...defaultState,
       ...persisted,
+      imageDataURL: null,
+      imageSource,
       canvasSize: { ...defaultState.canvasSize, ...(persisted.canvasSize ?? {}) },
       pattern: {
         ...defaultState.pattern,
@@ -67,14 +91,25 @@ export const appStore = createPersistedStore<AppState>("mustudio-register-app", 
 
 // --- Actions ---
 
-export function startWithImage(imageDataURL: string, filename: string, width: number, height: number) {
+export function startWithImage(
+  imageDataURL: string,
+  filename: string,
+  width: number,
+  height: number,
+  imageSource?: ImageSource | null
+) {
   appStore.setState((s) => ({
     ...s,
     started: true,
     imageDataURL,
+    imageSource: imageSource ?? s.imageSource,
     imageBaseName: filename,
     canvasSize: { width, height },
   }))
+}
+
+export function setImageSource(imageSource: ImageSource | null) {
+  appStore.setState((s) => ({ ...s, imageSource }))
 }
 
 export function startFresh(width: number, height: number) {

@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, useEffect } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useStore } from "@tanstack/react-store"
-import { Header } from "@/register/components/Header"
+import { AppHeader } from "@/components/AppHeader"
 import { LeftSliceSidebar } from "@/register/components/LeftSliceSidebar"
 import { Sidebar } from "@/register/components/Sidebar"
 import { UnifiedCanvas } from "@/register/components/UnifiedCanvas"
@@ -23,6 +23,8 @@ import {
 import { detectGridPoints, fitGrid } from "@/register/lib/autodetect"
 import { pixelsToUm } from "@/register/lib/units"
 import { normalizeImageDataForDisplayAsync } from "@/register/lib/normalize"
+import { loadImageFromSource, reloadActiveWorkspaceImage } from "@/register/lib/workspace-image"
+import { workspaceStore } from "@/workspace/store"
 
 /** Convert a data URL to an HTMLImageElement (async). */
 function useImageFromDataURL(dataURL: string | null): HTMLImageElement | null {
@@ -86,6 +88,7 @@ function useNormalizedPhaseContrast(phaseContrast: HTMLImageElement | null): HTM
 
 export default function RegisterApp() {
   const imageDataURL = useStore(appStore, (s) => s.imageDataURL)
+  const imageSource = useStore(appStore, (s) => s.imageSource)
   const imageBaseName = useStore(appStore, (s) => s.imageBaseName)
   const canvasSize = useStore(appStore, (s) => s.canvasSize)
   const pattern = useStore(appStore, (s) => s.pattern)
@@ -94,6 +97,25 @@ export default function RegisterApp() {
   const patternOpacity = useStore(appStore, (s) => s.patternOpacity)
   const detectedPoints = useStore(appStore, (s) => s.detectedPoints)
   const [workspaceImageError, setWorkspaceImageError] = useState<string | null>(null)
+  const hasWorkspace = useStore(workspaceStore, (s) => !!(s.activeId && s.workspaces.some((w) => w.id === s.activeId)))
+
+  // Auto-load image when none is loaded: prefer imageSource (reload) else active workspace (navigate)
+  useEffect(() => {
+    if (imageDataURL) return
+    const load = async () => {
+      if (imageSource) {
+        const r = await loadImageFromSource(imageSource)
+        if (r.ok) setWorkspaceImageError(null)
+        else setWorkspaceImageError(r.error)
+        return
+      }
+      if (!hasWorkspace) return
+      const r = await reloadActiveWorkspaceImage()
+      if (r.ok) setWorkspaceImageError(null)
+      else setWorkspaceImageError(r.error)
+    }
+    void load()
+  }, [imageDataURL, imageSource, hasWorkspace])
 
   const phaseContrast = useImageFromDataURL(imageDataURL)
   const normalizedPhaseContrast = useNormalizedPhaseContrast(phaseContrast)
@@ -135,7 +157,11 @@ export default function RegisterApp() {
 
   return (
     <div className="flex h-screen flex-col">
-      <Header />
+      <AppHeader
+        title="Register"
+        subtitle="Microscopy pattern-to-image registration"
+        backTo="/workspace"
+      />
       {workspaceImageError && (
         <div className="px-4 py-2 text-sm text-destructive border-b border-border bg-destructive/5">
           {workspaceImageError}
@@ -147,6 +173,11 @@ export default function RegisterApp() {
           canvasSize={canvasSize}
           patternPx={patternPx}
           transform={transform}
+          hasImage={!!phaseContrast}
+          hasDetectedPoints={!!detectedPoints && detectedPoints.length > 0}
+          onDetect={handleDetect}
+          onFitGrid={handleFitGrid}
+          onReset={handleReset}
         />
         <UnifiedCanvas
           displayImage={normalizedPhaseContrast}
@@ -173,11 +204,6 @@ export default function RegisterApp() {
           onTransformUpdate={updateTransform}
           patternOpacity={patternOpacity}
           onPatternOpacityChange={setPatternOpacity}
-          onReset={handleReset}
-          hasImage={!!phaseContrast}
-          hasDetectedPoints={!!detectedPoints && detectedPoints.length > 0}
-          onDetect={handleDetect}
-          onFitGrid={handleFitGrid}
         />
       </div>
     </div>

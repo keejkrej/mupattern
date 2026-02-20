@@ -1,15 +1,13 @@
 import { useCallback, useRef, useMemo, useState, useEffect } from "react"
+import { Navigate } from "react-router-dom"
 import { useStore } from "@tanstack/react-store"
-import { Header } from "@/register/components/Header"
+import { AppHeader } from "@/components/AppHeader"
+import { LeftSidebar } from "@/register/components/LeftSidebar"
 import { Sidebar } from "@/register/components/Sidebar"
 import { UnifiedCanvas, type UnifiedCanvasRef } from "@/register/components/UnifiedCanvas"
-import { Landing, type StartConfig } from "@/register/components/Landing"
 import { patternToPixels, patternToYAML } from "@/register/lib/units"
 import {
-  appStore,
-  startWithImage,
-  startFresh,
-  loadImage,
+  mupatternStore,
   setPattern,
   updateLattice,
   updateWidth,
@@ -18,7 +16,7 @@ import {
   rotatePattern,
   updateTransform,
   setCalibration,
-  setSensitivity,
+  setPatternOpacity,
   resetPatternAndTransform,
   setDetectedPoints,
   clearDetectedPoints,
@@ -67,28 +65,25 @@ function useNormalizedPhaseContrast(phaseContrast: HTMLImageElement | null): HTM
   return normalized
 }
 
-/** Convert an HTMLImageElement to a data URL. */
-function imageToDataURL(img: HTMLImageElement): string {
-  const canvas = document.createElement("canvas")
-  canvas.width = img.width
-  canvas.height = img.height
-  const ctx = canvas.getContext("2d")!
-  ctx.drawImage(img, 0, 0)
-  return canvas.toDataURL("image/png")
-}
-
 export default function RegisterApp() {
   const canvasRef = useRef<UnifiedCanvasRef>(null)
 
-  const started = useStore(appStore, (s) => s.started)
-  const imageDataURL = useStore(appStore, (s) => s.imageDataURL)
-  const imageBaseName = useStore(appStore, (s) => s.imageBaseName)
-  const canvasSize = useStore(appStore, (s) => s.canvasSize)
-  const pattern = useStore(appStore, (s) => s.pattern)
-  const transform = useStore(appStore, (s) => s.transform)
-  const calibration = useStore(appStore, (s) => s.calibration)
-  const sensitivity = useStore(appStore, (s) => s.sensitivity)
-  const detectedPoints = useStore(appStore, (s) => s.detectedPoints)
+  useEffect(() => {
+    document.title = "Register - MuPattern"
+    return () => {
+      document.title = "MuPattern"
+    }
+  }, [])
+
+  const started = useStore(mupatternStore, (s) => s.register.started)
+  const imageDataURL = useStore(mupatternStore, (s) => s.register.imageDataURL)
+  const imageBaseName = useStore(mupatternStore, (s) => s.register.imageBaseName)
+  const canvasSize = useStore(mupatternStore, (s) => s.register.canvasSize)
+  const pattern = useStore(mupatternStore, (s) => s.register.pattern)
+  const transform = useStore(mupatternStore, (s) => s.register.transform)
+  const calibration = useStore(mupatternStore, (s) => s.register.calibration)
+  const patternOpacity = useStore(mupatternStore, (s) => s.register.patternOpacity)
+  const detectedPoints = useStore(mupatternStore, (s) => s.register.detectedPoints)
 
   const phaseContrast = useImageFromDataURL(imageDataURL)
   const normalizedPhaseContrast = useNormalizedPhaseContrast(phaseContrast)
@@ -97,21 +92,6 @@ export default function RegisterApp() {
     () => patternToPixels(pattern, calibration),
     [pattern, calibration]
   )
-
-  const handleStart = useCallback((config: StartConfig) => {
-    if (config.kind === "image") {
-      const dataURL = imageToDataURL(config.image)
-      startWithImage(dataURL, config.filename, config.image.width, config.image.height)
-    } else {
-      startFresh(config.width, config.height)
-    }
-  }, [])
-
-  const handleImageLoad = useCallback((img: HTMLImageElement, filename: string) => {
-    const dataURL = imageToDataURL(img)
-    loadImage(dataURL, filename, img.width, img.height)
-    clearDetectedPoints()
-  }, [])
 
   const handleExportYAML = useCallback(() => {
     const yaml = patternToYAML(pattern, calibration)
@@ -123,8 +103,8 @@ export default function RegisterApp() {
     URL.revokeObjectURL(link.href)
   }, [pattern, calibration, imageBaseName])
 
-  const handleExport = useCallback(() => {
-    canvasRef.current?.exportAll()
+  const handleSaveCSV = useCallback(() => {
+    canvasRef.current?.exportCSV()
   }, [])
 
   const handleDetect = useCallback(() => {
@@ -158,13 +138,26 @@ export default function RegisterApp() {
   }, [])
 
   if (!started) {
-    return <Landing onStart={handleStart} />
+    return <Navigate to="/" replace />
   }
 
   return (
     <div className="flex h-screen flex-col">
-      <Header />
+      <AppHeader
+        title="Register"
+        subtitle="Microscopy pattern-to-image registration"
+        backTo="/"
+        backLabel="Home"
+      />
       <div className="flex flex-1 min-h-0">
+        <LeftSidebar
+          hasImage={!!phaseContrast}
+          hasDetectedPoints={!!detectedPoints && detectedPoints.length > 0}
+          onDetect={handleDetect}
+          onFitGrid={handleFitGrid}
+          onReset={handleReset}
+          onSave={handleSaveCSV}
+        />
         <UnifiedCanvas
           ref={canvasRef}
           displayImage={normalizedPhaseContrast}
@@ -175,14 +168,12 @@ export default function RegisterApp() {
           onTransformUpdate={updateTransform}
           onZoom={scalePattern}
           onRotate={rotatePattern}
-          sensitivity={sensitivity}
-          onExportYAML={handleExportYAML}
+          patternOpacity={patternOpacity}
           detectedPoints={detectedPoints}
         />
         <Sidebar
-          imageBaseName={phaseContrast ? imageBaseName : null}
-          onImageLoad={handleImageLoad}
           onConfigLoad={setPattern}
+          onConfigSave={handleExportYAML}
           onCalibrationLoad={setCalibration}
           calibration={calibration}
           onCalibrationChange={setCalibration}
@@ -192,14 +183,8 @@ export default function RegisterApp() {
           onHeightUpdate={updateHeight}
           transform={transform}
           onTransformUpdate={updateTransform}
-          sensitivity={sensitivity}
-          onSensitivityChange={setSensitivity}
-          onReset={handleReset}
-          onExport={handleExport}
-          hasImage={!!phaseContrast}
-          hasDetectedPoints={!!detectedPoints && detectedPoints.length > 0}
-          onDetect={handleDetect}
-          onFitGrid={handleFitGrid}
+          patternOpacity={patternOpacity}
+          onPatternOpacityChange={setPatternOpacity}
         />
       </div>
     </div>

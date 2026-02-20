@@ -30,7 +30,7 @@ function App() {
       <Routes>
         <Route path="/" element={<WorkspaceDashboard />} />
         <Route path="/workspace" element={<WorkspaceDashboard />} />
-        <Route path="/register" element={<WorkspaceOnlyRoute requireStarted><RegisterApp /></WorkspaceOnlyRoute>} />
+        <Route path="/register" element={<WorkspaceOnlyRoute><RegisterApp /></WorkspaceOnlyRoute>} />
         <Route path="/see" element={<WorkspaceOnlyRoute><SeeApp /></WorkspaceOnlyRoute>} />
       </Routes>
     </BrowserRouter>

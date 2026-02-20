@@ -153,7 +153,7 @@ export function Landing({ onStart }: LandingProps) {
           className="text-4xl tracking-tight"
           style={{ fontFamily: '"Bitcount", monospace' }}
         >
-          MuRegister
+          Register
         </h1>
         <p className="text-muted-foreground mt-1">
           Microscopy pattern-to-image registration

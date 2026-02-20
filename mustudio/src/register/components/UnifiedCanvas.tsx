@@ -312,7 +312,7 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
           const syncDt = Math.max(1, timestamp - syncStart)
           const syncHz = (syncCountRef.current * 1000) / syncDt
           const perfStats = lastDrawStatsRef.current
-          console.debug("[MuRegister perf]", {
+          console.debug("[Register perf]", {
             fps: Number(fps.toFixed(1)),
             syncHz: Number(syncHz.toFixed(1)),
             estimatedRects: perfStats?.estimatedRects ?? 0,

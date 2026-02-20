@@ -13,7 +13,7 @@ import {
 } from "@/see/lib/annotations";
 import { type SpotMap, spotKey, uploadSpotCSV } from "@/see/lib/spots";
 import {
-  viewerStore,
+  mupatternStore,
   setAnnotations as persistAnnotations,
   setSpots as persistSpots,
   setSelectedPos as persistSelectedPos,
@@ -27,7 +27,6 @@ import {
 } from "@/see/store";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import {
   ChevronLeft,
   ChevronRight,
@@ -37,8 +36,6 @@ import {
   Pause,
   SkipBack,
   SkipForward,
-  Sun,
-  Moon,
   Download,
   Upload,
   Pencil,
@@ -46,9 +43,10 @@ import {
   EyeOff,
   Crosshair,
 } from "lucide-react";
-import { useTheme } from "@/components/ThemeProvider";
+import { AppHeader } from "@/components/AppHeader";
+import { LeftSidebar } from "@/see/components/LeftSidebar";
 
-const PAGE_SIZE = 25; // 5x5
+const PAGE_SIZE = 9; // 3x3
 
 interface ViewerProps {
   store: DirectoryStore;
@@ -56,20 +54,19 @@ interface ViewerProps {
 }
 
 export function Viewer({ store, index }: ViewerProps) {
-  const { theme, toggleTheme } = useTheme();
 
-  // Persisted state from store
-  const selectedPos = useStore(viewerStore, (s) => s.selectedPos);
-  const t = useStore(viewerStore, (s) => s.t);
-  const c = useStore(viewerStore, (s) => s.c);
-  const page = useStore(viewerStore, (s) => s.page);
-  const contrastMin = useStore(viewerStore, (s) => s.contrastMin);
-  const contrastMax = useStore(viewerStore, (s) => s.contrastMax);
-  const annotating = useStore(viewerStore, (s) => s.annotating);
-  const annotationEntries = useStore(viewerStore, (s) => s.annotations);
-  const spotEntries = useStore(viewerStore, (s) => s.spots);
-  const showAnnotations = useStore(viewerStore, (s) => s.showAnnotations);
-  const showSpots = useStore(viewerStore, (s) => s.showSpots);
+  // Persisted state from central store
+  const selectedPos = useStore(mupatternStore, (s) => s.see.selectedPos);
+  const t = useStore(mupatternStore, (s) => s.see.t);
+  const c = useStore(mupatternStore, (s) => s.see.c);
+  const page = useStore(mupatternStore, (s) => s.see.page);
+  const contrastMin = useStore(mupatternStore, (s) => s.see.contrastMin);
+  const contrastMax = useStore(mupatternStore, (s) => s.see.contrastMax);
+  const annotating = useStore(mupatternStore, (s) => s.see.annotating);
+  const annotationEntries = useStore(mupatternStore, (s) => s.see.annotations);
+  const spotEntries = useStore(mupatternStore, (s) => s.see.spots);
+  const showAnnotations = useStore(mupatternStore, (s) => s.see.showAnnotations);
+  const showSpots = useStore(mupatternStore, (s) => s.see.showSpots);
 
   // Derive annotations Map from persisted entries
   const annotations: Annotations = useMemo(
@@ -146,7 +143,7 @@ export function Viewer({ store, index }: ViewerProps) {
   useEffect(() => {
     if (playing) {
       playIntervalRef.current = setInterval(() => {
-        const curr = viewerStore.state.t;
+        const curr = mupatternStore.state.see.t;
         persistT(curr >= maxT ? 0 : curr + 1);
       }, 500);
     }
@@ -320,59 +317,12 @@ export function Viewer({ store, index }: ViewerProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div>
-          <h1
-            className="text-4xl tracking-tight"
-            style={{ fontFamily: '"Bitcount", monospace' }}
-          >
-            MuSee
-          </h1>
-          <p className="text-base text-muted-foreground">
-            Micropattern crop viewer
-          </p>
-        </div>
-        <div className="flex items-center gap-6">
-          {index.positions.length > 1 && (
-            <select
-              value={validPos}
-              onChange={(e) => handleChangePos(e.target.value)}
-              className="bg-secondary text-secondary-foreground rounded px-2 py-1 text-sm"
-            >
-              {index.positions.map((p) => (
-                <option key={p} value={p}>
-                  Pos {p}
-                </option>
-              ))}
-            </select>
-          )}
-          <select
-            value={c}
-            onChange={(e) => handleChangeChannel(Number(e.target.value))}
-            className="bg-secondary text-secondary-foreground rounded px-2 py-1 text-sm"
-          >
-            {Array.from({ length: numChannels }, (_, i) => (
-              <option key={i} value={i}>
-                Ch {i}
-              </option>
-            ))}
-          </select>
-          <span className="text-sm text-muted-foreground">
-            {crops.length} crops
-          </span>
-          <div className="mx-1 h-4 w-px bg-border" />
-          <div className="flex items-center gap-2">
-            <Sun className="size-3.5 text-muted-foreground" />
-            <Switch
-              checked={theme === "dark"}
-              onCheckedChange={toggleTheme}
-              aria-label="Toggle dark mode"
-            />
-            <Moon className="size-3.5 text-muted-foreground" />
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title="See"
+        subtitle="Micropattern crop viewer"
+        backTo="/"
+        backLabel="Home"
+      />
 
       {/* Slider row */}
       <div className="px-4 py-1 border-b">
@@ -438,11 +388,19 @@ export function Viewer({ store, index }: ViewerProps) {
         </div>
       </div>
 
-      {/* Main area: crop grid + right sidebar */}
+      {/* Main area: left sidebar + crop grid + right sidebar */}
       <div className="flex flex-1 overflow-hidden">
+        <LeftSidebar
+          positions={index.positions}
+          validPos={validPos}
+          onPositionChange={handleChangePos}
+          numChannels={numChannels}
+          channel={c}
+          onChannelChange={handleChangeChannel}
+        />
         {/* Crop grid */}
         <div className="flex-1 overflow-hidden p-4">
-          <div className="grid grid-cols-5 grid-rows-5 gap-2 h-full">
+          <div className="grid grid-cols-3 grid-rows-3 gap-2 h-full">
             {pageCrops.map((crop) => (
               <div
                 key={crop.cropId}
@@ -537,22 +495,27 @@ export function Viewer({ store, index }: ViewerProps) {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-center gap-2 px-4 py-2 border-t">
-        <Button variant="ghost" size="icon-xs" disabled={clampedPage === 0} onClick={() => setPage(0)}>
-          <SkipBack className="size-3" />
-        </Button>
-        <Button variant="ghost" size="icon-xs" disabled={clampedPage === 0} onClick={() => setPage(clampedPage - 1)}>
-          <ChevronLeft className="size-3" />
-        </Button>
-        <span className="text-sm tabular-nums">
-          Page {clampedPage + 1} / {totalPages}
+      <div className="flex items-center justify-center gap-4 px-4 py-2 border-t">
+        <span className="text-sm text-muted-foreground">
+          {crops.length} crops
         </span>
-        <Button variant="ghost" size="icon-xs" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(clampedPage + 1)}>
-          <ChevronRight className="size-3" />
-        </Button>
-        <Button variant="ghost" size="icon-xs" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
-          <SkipForward className="size-3" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon-xs" disabled={clampedPage === 0} onClick={() => setPage(0)}>
+            <SkipBack className="size-3" />
+          </Button>
+          <Button variant="ghost" size="icon-xs" disabled={clampedPage === 0} onClick={() => setPage(clampedPage - 1)}>
+            <ChevronLeft className="size-3" />
+          </Button>
+          <span className="text-sm tabular-nums">
+            Page {clampedPage + 1} / {totalPages}
+          </span>
+          <Button variant="ghost" size="icon-xs" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(clampedPage + 1)}>
+            <ChevronRight className="size-3" />
+          </Button>
+          <Button variant="ghost" size="icon-xs" disabled={clampedPage >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
+            <SkipForward className="size-3" />
+          </Button>
+        </div>
       </div>
     </div>
   );

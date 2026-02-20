@@ -9,19 +9,22 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
-
 const STORAGE_KEY = "mupattern-theme"
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "dark"
     const stored = localStorage.getItem(STORAGE_KEY)
-    return (stored === "light" || stored === "dark") ? stored : "dark"
+    return stored === "light" || stored === "dark" ? stored : "dark"
   })
 
   useEffect(() => {
     const root = document.documentElement
     root.classList.remove("light", "dark")
     root.classList.add(theme)
+  }, [theme])
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEY, theme)
   }, [theme])
 

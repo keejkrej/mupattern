@@ -1,8 +1,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { useStore } from "@tanstack/react-store"
-import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Home, Save } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import {
   getWorkspaceVisiblePositionIndices,
   workspaceStore,
@@ -25,6 +24,11 @@ interface LeftSliceSidebarProps {
   canvasSize: { width: number; height: number }
   patternPx: PatternPixels
   transform: Transform
+  hasImage: boolean
+  hasDetectedPoints: boolean
+  onDetect: () => void
+  onFitGrid: (basisAngle: number) => void
+  onReset: () => void
 }
 
 export function LeftSliceSidebar({
@@ -32,8 +36,12 @@ export function LeftSliceSidebar({
   canvasSize,
   patternPx,
   transform,
+  hasImage,
+  hasDetectedPoints,
+  onDetect,
+  onFitGrid,
+  onReset,
 }: LeftSliceSidebarProps) {
-  const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const activeWorkspace = useStore(workspaceStore, (s) => {
     const { activeId, workspaces } = s
@@ -155,34 +163,61 @@ export function LeftSliceSidebar({
     }
   }, [activeWorkspace, canvasSize, currentPosition, onWorkspaceImageError, patternPx, saving, transform])
 
-  if (!activeWorkspace || visibleIndices.length === 0) return null
+  const hasWorkspace = !!activeWorkspace && visibleIndices.length > 0
 
   return (
     <aside className="w-64 flex-shrink-0 overflow-y-auto border-r border-border p-4 space-y-4">
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-full justify-start"
-        onClick={() => navigate("/workspace")}
-        title="Back to workspace"
-      >
-        <Home className="size-4" />
-        Workspaces
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="w-full justify-start"
-        onClick={() => { void handleSave() }}
-        disabled={saving}
-        title="Save current position bbox CSV to workspace"
-      >
-        <Save className="size-4" />
-        {saving ? "Saving..." : "Save"}
-      </Button>
-
       <div>
-        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Image Slice</h2>
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground mb-2">Actions</h2>
+        <div className="space-y-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full h-7 text-base"
+            disabled={!hasImage}
+            onClick={onDetect}
+          >
+            Detect cells
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full h-7 text-base"
+            disabled={!hasDetectedPoints}
+            onClick={() => onFitGrid(Math.PI / 2)}
+          >
+            Auto square (a=b)
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full h-7 text-base"
+            disabled={!hasDetectedPoints}
+            onClick={() => onFitGrid(Math.PI / 3)}
+          >
+            Auto hex (a=b)
+          </Button>
+          <div className="flex gap-1.5">
+            <Button variant="secondary" size="sm" className="flex-1 h-7 text-base" onClick={onReset}>
+              Reset
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="flex-1 h-7 text-base"
+              disabled={!hasWorkspace || currentPosition == null || saving}
+              onClick={() => { void handleSave() }}
+              title="Save bbox CSV to workspace"
+            >
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
+      </div>
+      {hasWorkspace && (
+        <>
+          <div>
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Image Slice</h2>
         <p className="text-xs text-muted-foreground mt-1">
           Choose position and stack indices.
         </p>
@@ -324,6 +359,8 @@ export function LeftSliceSidebar({
           </div>
         </div>
       </div>
+        </>
+      )}
     </aside>
   )
 }
