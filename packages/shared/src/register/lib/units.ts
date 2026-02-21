@@ -1,24 +1,24 @@
-import type { Calibration, PatternConfigUm, PatternPixels } from "../types"
+import type { Calibration, PatternConfigUm, PatternPixels } from "../types";
 
 export function umToPixels(um: number, cal: Calibration): number {
-  return um / cal.umPerPixel
+  return um / cal.umPerPixel;
 }
 
 export function pixelsToUm(px: number, cal: Calibration): number {
-  return px * cal.umPerPixel
+  return px * cal.umPerPixel;
 }
 
 export function degToRad(deg: number): number {
-  return (deg * Math.PI) / 180
+  return (deg * Math.PI) / 180;
 }
 
 export function radToDeg(rad: number): number {
-  return (rad * 180) / Math.PI
+  return (rad * 180) / Math.PI;
 }
 
 /** Normalize angle in radians to [-π, π]. */
 export function normalizeAngleRad(rad: number): number {
-  return Math.atan2(Math.sin(rad), Math.cos(rad))
+  return Math.atan2(Math.sin(rad), Math.cos(rad));
 }
 
 export function patternToPixels(config: PatternConfigUm, cal: Calibration): PatternPixels {
@@ -31,11 +31,11 @@ export function patternToPixels(config: PatternConfigUm, cal: Calibration): Patt
     },
     width: umToPixels(config.width, cal),
     height: umToPixels(config.height, cal),
-  }
+  };
 }
 
 export function patternToYAML(config: PatternConfigUm, cal: Calibration): string {
-  const r = (n: number) => Number(n.toFixed(4))
+  const r = (n: number) => Number(n.toFixed(4));
   return [
     "calibration:",
     `  um_per_pixel: ${r(cal.umPerPixel)}`,
@@ -49,33 +49,35 @@ export function patternToYAML(config: PatternConfigUm, cal: Calibration): string
     `width: ${r(config.width)}  # µm`,
     `height: ${r(config.height)}  # µm`,
     "",
-  ].join("\n")
+  ].join("\n");
 }
 
-
-export function parseYAMLConfig(text: string): { pattern: PatternConfigUm; calibration?: Calibration } {
+export function parseYAMLConfig(text: string): {
+  pattern: PatternConfigUm;
+  calibration?: Calibration;
+} {
   // Simple parser for our flat YAML format — strips comments, extracts key: value pairs
-  const vals: Record<string, number> = {}
-  const lines = text.split("\n")
-  const stack: string[] = []
+  const vals: Record<string, number> = {};
+  const lines = text.split("\n");
+  const stack: string[] = [];
 
   for (const raw of lines) {
-    const line = raw.replace(/#.*$/, "").trimEnd()
-    if (!line.trim()) continue
+    const line = raw.replace(/#.*$/, "").trimEnd();
+    if (!line.trim()) continue;
 
-    const indent = line.search(/\S/)
+    const indent = line.search(/\S/);
     // Pop stack to match indent level (2 spaces per level)
-    while (stack.length > indent / 2) stack.pop()
+    while (stack.length > indent / 2) stack.pop();
 
-    const match = line.trim().match(/^(\w+):\s*(.*)$/)
-    if (!match) continue
+    const match = line.trim().match(/^(\w+):\s*(.*)$/);
+    if (!match) continue;
 
-    const [, key, value] = match
+    const [, key, value] = match;
     if (value) {
-      const path = [...stack, key].join(".")
-      vals[path] = parseFloat(value)
+      const path = [...stack, key].join(".");
+      vals[path] = parseFloat(value);
     } else {
-      stack.push(key)
+      stack.push(key);
     }
   }
 
@@ -88,11 +90,12 @@ export function parseYAMLConfig(text: string): { pattern: PatternConfigUm; calib
     },
     width: vals["width"] ?? vals["square_size"] ?? 25,
     height: vals["height"] ?? vals["square_size"] ?? 25,
-  }
+  };
 
-  const calibration = vals["calibration.um_per_pixel"] != null
-    ? { umPerPixel: vals["calibration.um_per_pixel"] }
-    : undefined
+  const calibration =
+    vals["calibration.um_per_pixel"] != null
+      ? { umPerPixel: vals["calibration.um_per_pixel"] }
+      : undefined;
 
-  return { pattern, calibration }
+  return { pattern, calibration };
 }

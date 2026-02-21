@@ -1,15 +1,15 @@
-import { useNavigate } from "react-router-dom"
-import { ThemeToggle } from "./ThemeToggle"
-import { Button } from "./ui/button"
-import { Home } from "lucide-react"
+import { useNavigate } from "react-router-dom";
+import { ThemeToggle } from "./ThemeToggle";
+import { Button } from "./ui/button";
+import { Home } from "lucide-react";
 
 interface AppHeaderProps {
-  title: string
-  subtitle: string
-  backTo?: string
-  backLabel?: string
-  onBackClick?: () => void
-  right?: React.ReactNode
+  title: string;
+  subtitle: string;
+  backTo?: string;
+  backLabel?: string;
+  onBackClick?: () => void;
+  right?: React.ReactNode;
 }
 
 export function AppHeader({
@@ -20,12 +20,12 @@ export function AppHeader({
   onBackClick,
   right,
 }: AppHeaderProps) {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   const handleBack = () => {
-    onBackClick?.()
-    if (backTo) navigate(backTo)
-  }
+    onBackClick?.();
+    if (backTo) navigate(backTo);
+  };
 
   return (
     <header className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -41,10 +41,7 @@ export function AppHeader({
           </Button>
         )}
         <div>
-          <h1
-            className="text-4xl tracking-tight"
-            style={{ fontFamily: '"Bitcount", monospace' }}
-          >
+          <h1 className="text-4xl tracking-tight" style={{ fontFamily: '"Bitcount", monospace' }}>
             {title}
           </h1>
           <p className="text-base text-muted-foreground">{subtitle}</p>
@@ -55,5 +52,5 @@ export function AppHeader({
         <ThemeToggle />
       </div>
     </header>
-  )
+  );
 }

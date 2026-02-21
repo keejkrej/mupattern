@@ -6,8 +6,8 @@ MCF7 cancer cells adhere to micropatterns printed on glass. CAR-T cells are adde
 
 ## App status
 
-- `mupattern` (web) is a lite, deployed app and is currently maintenance-only.
-- `mustudio` (desktop) is the primary surface for ongoing feature development, especially workspace flows.
+- `mupattern-web` (web) is a lite, deployed app and is currently maintenance-only.
+- `mupattern-desktop` (desktop) is the primary surface for ongoing feature development, especially workspace flows.
 
 ### Positions
 
@@ -20,65 +20,59 @@ MCF7 cancer cells adhere to micropatterns printed on glass. CAR-T cells are adde
 ## Pipeline overview
 
 ```
-ND2 ──► muapplication file convert ──► raw TIFFs ──► /register ──► bbox CSV ──► muapplication file crop ──► crops.zarr
+ND2 ──► mupattern convert ──► raw TIFFs ──► /register ──► bbox CSV ──► mupattern crop ──► crops.zarr
                                                         │
                                                         ▼
                                                       /see ──► annotation CSV
                                                         │
                                                         ▼
-                                                muapplication kill dataset ──► HF Dataset
+                                                mupattern dataset kill ──► HF Dataset
                                                         │
                                                         ▼
-                                                  muapplication kill train ──► model weights
+                                                  mupattern train kill ──► model weights
                                                         │
                                                         ▼
-                                                muapplication kill predict ──► predictions CSV
+                                                mupattern kill ──► cleaned predictions CSV
                                                         │
                                                         ▼
-                                                  muapplication kill clean ──► cleaned CSV
-                                                        │
-                                                        ▼
-                                                   muapplication kill plot ──► kill curve plots
+                                                mupattern plot kill ──► kill curve plots
 
-                                              muapplication expression analyze ──► expression CSV
+                                              mupattern expression ──► expression CSV
                                                         │
                                                         ▼
-                                                muapplication expression plot ──► expression plots
+                                                mupattern plot expression ──► expression plots
 
-                                            muapplication tissue segment ──► masks.zarr
+                                            mupattern tissue ──► masks.zarr + tissue CSV
                                                         │
                                                         ▼
-                                muapplication tissue analyze (crops + masks) ──► tissue CSV
-                                                        │
-                                                        ▼
-                                                muapplication tissue plot ──► tissue plots
+                                                mupattern plot tissue ──► tissue plots
 
-                                                  muapplication spot detect ──► spots CSV
+                                                  mupattern spot ──► spots CSV
                                                         │
                                                         ▼
-                                                    muapplication spot plot ──► spot count plots
+                                                mupattern plot spot ──► spot count plots
 ```
 
 ## Packages
 
 | Package | Language | Description |
 |---------|----------|-------------|
-| `mupattern/` | React/Vite | Web app: simple landing page + pattern registration (Register) + crop viewer (See) |
-| `mustudio/` | Electron + React/Vite | Desktop app: workspace dashboard + workspace-integrated Register/See experience |
-| `muapplication/` | Python backend (CLI/API/GUI) | Unified backend with file, kill, expression, spot, and tissue domains for MuStudio |
+| `mupattern-web/` | React/Vite | Web app: simple landing page + pattern registration (Register) + crop viewer (See) |
+| `mupattern-desktop/` | Electron + React/Vite | Desktop app: workspace dashboard + workspace-integrated Register/See experience |
+| `mupattern-py/` | Python CLI (reference) | Pure CLI reference implementation; prod uses mupattern-desktop with compiled Rust binary + ONNX |
 
 ## Prerequisites
 
 - [Bun](https://bun.sh/) for JavaScript/TypeScript packages
 - [uv](https://docs.astral.sh/uv/) for Python packages
-- Raw microscopy data: either an ND2 file (use `muapplication file convert` first) or 2048x2048 uint16 TIFFs named `img_channel{C}_position{N}_time{T}_z{Z}.tif` in `Pos{N}/` directories
+- Raw microscopy data: either an ND2 file (use `mupattern convert` first) or 2048x2048 uint16 TIFFs named `img_channel{C}_position{N}_time{T}_z{Z}.tif` in `Pos{N}/` directories
 
 ## Step-by-step guide
 
 ### 1. Start the web app
 
 ```bash
-cd mupattern
+cd mupattern-web
 bun install
 bun run dev
 # open http://localhost:5173
@@ -86,7 +80,7 @@ bun run dev
 
 The landing page (`/`) links to **Register** and **See**.
 
-`mupattern` is intentionally kept minimal and stable; use `mustudio` for workspace-heavy workflows and new capabilities.
+`mupattern-web` is intentionally kept minimal and stable; use `mupattern-desktop` for workspace-heavy workflows and new capabilities.
 
 ### 1a. Single-file mode (web)
 
@@ -111,47 +105,47 @@ Once an image is loaded in the registration tool:
 
 The bbox CSV is the input for the cropping step.
 
-### 1b. Workspace mode (desktop via mustudio)
+### 1b. Workspace mode (desktop via mupattern-desktop)
 
-Use `mustudio` when you want the folder-based multi-position workflow:
+Use `mupattern-desktop` when you want the folder-based multi-position workflow:
 
 ```bash
-cd mustudio
+cd mupattern-desktop
 bun install
 bun run dev
 ```
 
-From `mustudio`, use the workspace dashboard to open a folder, jump into Register, and navigate positions with prev/next.
+From `mupattern-desktop`, use the workspace dashboard to open a folder, jump into Register, and navigate positions with prev/next. Tasks (convert, crop, movie, expression, kill) run from the Tasks page; use **Clean completed** to remove finished tasks from the list.
 
-### 2a. Convert ND2 to TIFF (muapplication file convert)
+### 2a. Convert ND2 to TIFF (mupattern convert)
 
 If your raw data is in Nikon ND2 format, convert it to per-position TIFF folders first:
 
 ```bash
-uv run muapplication file convert /path/to/data.nd2 --pos all --time all --output /path/to/data
+uv run mupattern convert /path/to/data.nd2 --pos all --time all --output /path/to/data
 ```
 
 `--pos` and `--time` are required and accept `"all"` or a comma-separated mix of indices and Python-style slices:
 
 ```bash
 # Convert only positions 0-2 and timepoints 0-49
-uv run muapplication file convert /path/to/data.nd2 --pos "0:3" --time "0:50"
+uv run mupattern convert /path/to/data.nd2 --pos "0:3" --time "0:50"
 
 # Cherry-pick positions and timepoints
-uv run muapplication file convert /path/to/data.nd2 --pos "0, 3, 5" --time "0:10, 50, -5:"
+uv run mupattern convert /path/to/data.nd2 --pos "0, 3, 5" --time "0:10, 50, -5:"
 
 # Negative indices and steps work too
-uv run muapplication file convert /path/to/data.nd2 --pos "-1" --time "0:100:2"
+uv run mupattern convert /path/to/data.nd2 --pos "-1" --time "0:100:2"
 ```
 
 Before writing, the command prints the full list of selected positions and timepoints and asks for confirmation. TIFF filenames use contiguous 0-based time indices (so `crop` works unchanged); each `Pos{N}/` folder gets a `time_map.csv` mapping the TIFF time index back to the original ND2 timepoint.
 
-### 2b. Crop into zarr (muapplication file crop)
+### 2b. Crop into zarr (mupattern crop)
 
 Cut each pattern site out of every frame and store as a zarr array.
 
 ```bash
-uv run muapplication file crop \
+uv run mupattern crop \
   --input /path/to/data \
   --pos 150 \
   --bbox /path/to/bbox.csv \
@@ -181,7 +175,7 @@ Each crop is a TCZYX zarr array with chunk size `(1,1,1,H,W)` for fast single-fr
 
 ### 3. Annotate in See
 
-Open the crop viewer to label cells as present or absent. See is available at `/see` within the mupattern app.
+Open the crop viewer to label cells as present or absent. See is available at `/see` within the mupattern-web app.
 
 1. From the landing page, click **See** (or navigate to `/see`)
 2. **Open folder**: click "Open crops.zarr" and select the `crops.zarr` directory using the browser's folder picker
@@ -197,41 +191,32 @@ Tips:
 - For each crop, annotate several timepoints covering the transition from present to absent
 - You need at least ~400 labeled samples for decent training. In our case, 28 crops × 15 timepoints = 420 labels
 
-### 4. Build training dataset (muapplication kill dataset)
+### 4. Build training dataset (mupattern dataset kill)
 
 Convert the zarr crops + annotation CSV into a HuggingFace Dataset.
 
-Create a config YAML:
-
-```yaml
-# dataset.yaml
-sources:
-  - zarr: /path/to/crops.zarr
-    pos: 150
-    annotations: /path/to/annotations.csv
-```
-
-Run:
-
 ```bash
-uv run muapplication kill dataset \
-  --config /path/to/dataset.yaml \
+uv run mupattern dataset kill \
+  --zarr /path/to/crops.zarr \
+  --pos 150 \
+  --annotations /path/to/annotations.csv \
   --output /path/to/dataset
 ```
 
 This reads every annotated `(t, crop)` pair from the zarr store, normalizes uint16 → uint8, and saves as a HuggingFace Dataset with columns: `image`, `label` (0=absent, 1=present), `pos`, `crop`, `t`.
 
-### 5. Train the classifier (muapplication kill train)
+### 5. Train the classifier (mupattern train kill)
 
 Fine-tune a pretrained ResNet-18 on your dataset.
 
 ```bash
-uv run muapplication kill train \
+uv run mupattern train kill \
   --dataset /path/to/dataset \
   --output /path/to/model \
   --epochs 20 \
   --batch-size 32 \
-  --lr 1e-4
+  --lr 1e-4 \
+  --split 0.2
 ```
 
 The best checkpoint (by F1 score) is saved to `model/best/`. Training takes ~45 seconds on Apple Silicon with 420 samples. Our model achieved 96.5% accuracy and 0.97 F1.
@@ -244,125 +229,88 @@ Options:
 - `--lr` — learning rate (default: 1e-4)
 - `--split` — validation fraction (default: 0.2)
 
-### 6. Predict on all crops (muapplication kill predict)
+### 6. Predict on all crops (mupattern kill)
 
 Run inference on the full zarr store (or a subset).
 
-Create a predict config YAML:
-
-```yaml
-# predict.yaml
-sources:
-  - zarr: /path/to/crops.zarr
-    pos: 150
-    t_range: [0, 50]       # optional: only predict t=0..49
-    crop_range: [0, 125]   # optional: only predict crops 0..124
-```
-
-Run:
-
 ```bash
 # Using the pretrained model from HuggingFace:
-uv run muapplication kill predict \
-  --config /path/to/predict.yaml \
+uv run mupattern kill \
+  --zarr /path/to/crops.zarr \
+  --pos 150 \
   --model keejkrej/mupattern-resnet18 \
-  --output /path/to/predictions.csv
+  --output /path/to/predictions.csv \
+  --batch-size 32
 
-# Or using a local model directory:
-uv run muapplication kill predict \
-  --config /path/to/predict.yaml \
+# With optional time/crop range:
+uv run mupattern kill \
+  --zarr /path/to/crops.zarr \
+  --pos 150 \
   --model /path/to/model/best \
-  --output /path/to/predictions.csv
+  --output /path/to/predictions.csv \
+  --batch-size 32 \
+  --t-start 0 --t-end 50 \
+  --crop-start 0 --crop-end 125
 ```
 
 Output is a CSV in the same `t,crop,label` format as annotations — can be loaded back into See for visual verification.
 
-### 7. Clean and plot (muapplication kill)
+### 7. Plot (mupattern plot kill)
 
-The raw predictions may have "flickering" — a cell classified as absent then present again. Since dead cells can't come back, enforce monotonicity:
+`mupattern kill` runs inference then cleans predictions (enforces monotonicity: once absent, stays absent). The output is ready for plotting:
 
 ```bash
-# Clean: once absent, stays absent
-uv run muapplication kill clean \
+uv run mupattern plot kill \
   --input /path/to/predictions.csv \
-  --output /path/to/cleaned.csv
-
-# Plot: kill curve + death time histogram
-uv run muapplication kill plot \
-  --input /path/to/cleaned.csv \
   --output /path/to/kill_curve.png
 ```
 
-The `clean` command reports which crops had violations (resurrections) and forces all timepoints after the first absence to absent.
-
-The `plot` command generates two panels:
+The plot generates two panels:
 - **Kill curve**: number of present cells over time
 - **Death time histogram**: when cells died (first timepoint classified absent)
 
 Death times at `t=0` are excluded — a crop absent at `t=0` means no cell was ever present on that pattern site, not a death event.
 
-### 8. Tissue — multi-cell crops (muapplication tissue)
+### 8. Tissue — multi-cell crops (mupattern tissue)
 
-For crops with multiple cells per pattern (e.g. ~10 cells, phase + fluorescence), segment with Cellpose v4 and measure per-cell GFP expression.
+For crops with multiple cells per pattern (e.g. ~10 cells, phase + fluorescence), run segment then analyze in one command:
 
 ```bash
-# Segment: run Cellpose on each crop/frame, save masks (same layout as crops)
-uv run muapplication tissue segment \
+# Segment + analyze: Cellpose on each crop/frame, then measure per-cell fluorescence
+uv run mupattern tissue \
   --zarr /path/to/crops.zarr \
   --pos 0 \
   --channel-phase 0 \
   --channel-fluorescence 1 \
-  --output /path/to/masks.zarr
-
-# Analyze: load crops + masks, compute per-cell total fluorescence, area, background
-uv run muapplication tissue analyze \
-  --zarr /path/to/crops.zarr \
-  --masks /path/to/masks.zarr \
-  --pos 0 \
-  --channel-fluorescence 1 \
-  --output /path/to/tissue.csv
+  --output /path/to/tissue.csv \
+  --method cellpose
 
 # Plot: GFP+ count and mean/median intensity above background over time
-uv run muapplication tissue plot \
+uv run mupattern plot tissue \
   --input /path/to/tissue.csv \
-  --output /path/to/tissue.png \
+  --output /path/to/tissue_plots \
   --gfp-threshold 1.0
 ```
 
-- **segment** uses phase + fluorescence to build a 3-channel image for Cellpose (SAM backbone). Output `masks.zarr` mirrors `crops.zarr`: `pos/{pos}/crop/{crop_id}` with shape `(T, H, W)` uint32 labels.
-- **analyze** reads fluorescence from crops and labels from masks; writes CSV with `t,crop,cell,total_fluorescence,cell_area,background`. If `pos/{pos}/background` is missing in crops.zarr, background is 0.
-- **plot** treats a cell as GFP+ when `(total_fluorescence / cell_area) - background > --gfp-threshold`, then plots GFP+ count and mean/median of that value over time.
+- **tissue** runs segment (Cellpose/CellSAM/watershed) then analyze: writes `masks.zarr` (default: same dir as output) and CSV `t,crop,cell,total_fluorescence,cell_area,background`. Use `--method watershed` for fluo-only (no phase channel).
+- **plot tissue** treats a cell as GFP+ when `(total_fluorescence / cell_area) - background > --gfp-threshold`, then plots GFP+ count and mean/median of that value over time.
 
-### 9. Detect spots (muapplication spot)
+### 9. Detect spots (mupattern spot)
 
 Detect fluorescent spots per crop per timepoint using spotiflow.
 
-Create a config YAML:
-
-```yaml
-# spots.yaml
-sources:
-  - zarr: /path/to/crops.zarr
-    pos: 0
-    channel: 1
-```
-
-Run:
-
 ```bash
 # Detect spots
-uv run muapplication spot detect \
-  --config /path/to/spots.yaml \
-  --output /path/to/spots.csv
-
-# Use a different spotiflow model
-uv run muapplication spot detect \
-  --config /path/to/spots.yaml \
+uv run mupattern spot \
+  --zarr /path/to/crops.zarr \
+  --pos 0 \
+  --channel 1 \
   --output /path/to/spots.csv \
+  --crop all \
   --model general
 
 # Plot spot counts over time
-uv run muapplication spot plot \
+uv run mupattern plot spot \
   --input /path/to/spots.csv \
   --output /path/to/spots.png
 ```
@@ -430,19 +378,19 @@ examples/
   kill_pos150_bbox.csv              # Pos150 bounding boxes (killing 2D — MCF7 + CAR-T in suspension)
   kill_pos156_bbox.csv              # Pos156 bounding boxes (killing 3D — MCF7 + CAR-T in collagen gel)
   kill_pos150_annotation.csv        # manual annotations (420 labels, 28 crops, t=0..21)
-  kill_pos140_config.yaml           # muapplication kill predict config for Pos140
-  kill_pos150_config.yaml           # muapplication kill predict config for Pos150
-  kill_pos156_config.yaml           # muapplication kill predict config for Pos156
+  kill_pos140_config.yaml           # mupattern kill config for Pos140
+  kill_pos150_config.yaml           # mupattern kill config for Pos150
+  kill_pos156_config.yaml           # mupattern kill config for Pos156
   kill_pos140.png                   # kill curve — control
   kill_pos150.png                   # kill curve — killing 2D
   kill_pos156.png                   # kill curve — killing 3D
   spot_pos9_bbox.csv                # Pos9 bounding boxes (spot detection)
-  spot_pos9_config.yaml             # muapplication spot detect config for Pos9 (channel 2)
+  spot_pos9_config.yaml             # mupattern spot config for Pos9 (channel 2)
   spot_pos9.png                     # spot count curves — Pos9
   expression_pos0_bbox.csv          # Pos0 bounding boxes (HuH7)
   expression_pos1_bbox.csv          # Pos1 bounding boxes (HuH7)
-  expression_pos0_config.yaml       # muapplication expression analyze config for Pos0
-  expression_pos1_config.yaml       # muapplication expression analyze config for Pos1
+  expression_pos0_config.yaml       # mupattern expression config for Pos0
+  expression_pos1_config.yaml       # mupattern expression config for Pos1
   expression_pos0.jpg               # expression curves — Pos0
   expression_pos1.jpg               # expression curves — Pos1
 ```
@@ -457,7 +405,7 @@ uvx --from huggingface_hub hf download keejkrej/mupattern-resnet18 --local-dir .
 
 ## File formats
 
-### Bounding box CSV (Register → muapplication file crop)
+### Bounding box CSV (Register → mupattern crop)
 
 ```csv
 crop,x,y,w,h
@@ -465,7 +413,7 @@ crop,x,y,w,h
 1,22,1678,77,77
 ```
 
-### Annotation / prediction CSV (See ↔ muapplication kill)
+### Annotation / prediction CSV (See ↔ mupattern kill)
 
 ```csv
 t,crop,label
@@ -476,7 +424,7 @@ t,crop,label
 
 All tools use the same `t,crop,label` format. Labels are `true` (cell present) or `false` (cell absent).
 
-### Dataset config YAML (muapplication kill dataset)
+### Dataset (mupattern dataset kill)
 
 ```yaml
 sources:
@@ -485,7 +433,7 @@ sources:
     annotations: /path/to/annotations.csv
 ```
 
-### Expression CSV (muapplication expression analyze → muapplication expression plot)
+### Expression CSV (mupattern expression → mupattern plot expression)
 
 ```csv
 t,crop,intensity,area,background
@@ -496,7 +444,7 @@ t,crop,intensity,area,background
 
 One row per crop per timepoint. `intensity` is the sum of pixel values in the crop; `area` is the number of pixels (h×w); `background` is the per-pixel background for that frame/channel (from `crops.zarr`). Background-subtracted intensity = `intensity - background * area`.
 
-### Tissue CSV (muapplication tissue analyze → muapplication tissue plot)
+### Tissue CSV (mupattern tissue → mupattern plot tissue)
 
 ```csv
 t,crop,cell,total_fluorescence,cell_area,background
@@ -508,7 +456,7 @@ t,crop,cell,total_fluorescence,cell_area,background
 
 One row per cell per frame. `cell` is the segmentation label (1, 2, …); `total_fluorescence` is the sum of fluorescence in that cell’s pixels; `cell_area` is the number of pixels in the cell; `background` is per-pixel background for that frame/channel (0 if missing from crops.zarr). GFP+ in plot: `(total_fluorescence / cell_area) - background > --gfp-threshold`.
 
-### Spot CSV (muapplication spot detect → muapplication spot plot)
+### Spot CSV (mupattern spot → mupattern plot spot)
 
 ```csv
 t,crop,spot,y,x
@@ -519,7 +467,7 @@ t,crop,spot,y,x
 
 One row per detected spot. `spot` is a 0-based index within each `(t, crop)` frame. `y` and `x` are subpixel spot coordinates.
 
-### Predict config YAML (muapplication kill predict)
+### Predict (mupattern kill)
 
 ```yaml
 sources:
@@ -529,51 +477,31 @@ sources:
     crop_range: [0, 125]   # [start, end), optional
 ```
 
-## GUI executables
-
-`muapplication` includes file and expression GUI apps (CustomTkinter) for users who prefer a graphical interface.
-
-**Run from source:**
-
-```bash
-uv run muapplication-file-gui
-uv run muapplication-expression-gui
-```
-
-**Build standalone executables** (Windows, no Python install required):
-
-```bash
-uv run pyinstaller pyinstaller/mufile_gui.spec --noconfirm
-uv run pyinstaller pyinstaller/muexpression_gui.spec --noconfirm
-```
-
-Outputs: `dist/mufile-gui.exe` and `dist/muexpression-gui.exe`. These bundles do not include PyTorch.
-
 ## Development
 
 ```bash
 # Install JS dependencies and run the web app
-cd mupattern
+cd mupattern-web
 bun install
 bun run dev
 
 # Desktop workspace app
-cd ../mustudio
+cd ../mupattern-desktop
 bun install
 bun run dev
 
 # Run Python CLIs from repo root (uv workspace)
-uv run muapplication --help
-uv run muapplication file --help
-uv run muapplication kill --help
-uv run muapplication expression --help
-uv run muapplication tissue --help
-uv run muapplication spot --help
+uv run mupattern --help
+uv run mupattern crop --help
+uv run mupattern kill --help
+uv run mupattern expression --help
+uv run mupattern tissue --help
+uv run mupattern spot --help
 ```
 
 ## Tech stack
 
-- **mupattern** (web register + see): React 18, TypeScript, Vite, React Router, TanStack Store, Tailwind CSS 4, shadcn/ui, HTML5 Canvas, File System Access API
-- **mustudio** (desktop workspace): Electron, React 18, TypeScript, Vite, React Router, TanStack Store
-- **muapplication**: Python, typer, FastAPI, zarr v2, tifffile, nd2, transformers (HuggingFace), torch, cellpose, spotiflow, pandas, matplotlib
+- **mupattern-web** (web register + see): React 18, TypeScript, Vite, React Router, TanStack Store, Tailwind CSS 4, shadcn/ui, HTML5 Canvas, File System Access API
+- **mupattern-desktop** (desktop workspace): Electron, React 18, TypeScript, Vite, React Router, TanStack Store
+- **mupattern-py** (CLI reference): Python, typer, zarr v2, tifffile, nd2, transformers, torch, cellpose, spotiflow, pandas, matplotlib
 

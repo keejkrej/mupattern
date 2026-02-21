@@ -1,9 +1,14 @@
 # Dependencies
 node_modules/
 
+# nd2-rs (separate repo, use crates.io)
+nd2-rs/
+
 # Build output
 dist/
 build/
+electron-dist/
+target/
 
 # Lockfiles (optional - can be committed)
 bun.lock
@@ -11,6 +16,7 @@ bun.lock
 # Editor/IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *~
@@ -23,6 +29,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 .venv/
+.muapplication/
 
 # Logs
 *.log
@@ -32,5 +39,6 @@ __pycache__/
 
 # Model weights (too large for git)
 data/model/
+onnx_models/*/
 .serena/
 .claude/

@@ -6,15 +6,17 @@
 
 ## Project structure
 
-- **Root** `pyproject.toml` defines a uv workspace; Python package: `muapplication`
-- Run Python CLIs from repo root: `uv run muapplication --help` and domain subcommands like `uv run muapplication file --help`.
-- **muapplication** domains: `file` (convert, crop), `kill` (dataset, train, predict, clean, plot), `expression` (analyze, plot), `tissue` (segment, analyze, plot), `spot` (detect, plot).
-- **crops.zarr** layout: `pos/{pos:03d}/crop/{crop_id}` arrays (T, C, Z, H, W); optional `pos/{pos:03d}/background` (T, C, Z) per-pixel. Expression CSV: `t,crop,intensity,area,background`. Tissue: `segment` writes **masks.zarr** (same pos/crop keys, arrays (T, H, W) uint32); `analyze` reads crops + masks, writes CSV `t,crop,cell,total_fluorescence,cell_area,background`; `plot` uses `(total_fluorescence/cell_area)-background > gfp_threshold` for GFP+.
-- JS app (web): `mupattern` — lite web app (landing, register, see), deployed on Firebase; run with `bun run dev` from that directory
-- JS app (desktop): `mustudio` — Electron workspace-first app; run with `bun run dev` from that directory
+- **Root** `pyproject.toml` defines a uv workspace; Python package: `mupattern-py`
+- Run Python CLIs from repo root: `uv run mupattern --help` and domain subcommands like `uv run mupattern crop --help`.
+- **mupattern-py** (pure Python CLI, reference): Top-level inference: `convert`, `crop`, `movie`, `expression`, `kill`, `spot`, `tissue`. Python-only: `plot` (expression, kill, spot, tissue), `train kill` (train, export-onnx), `dataset kill`. `kill` runs predict then clean (monotonicity) in one pipeline. Prod code lives in mupattern-desktop (Rust binary + ONNX). Uses `nd2` (nd2-py) for ND2; `common.nd2_utils.read_frame_2d(f, p, t, c, z)` for 2D Y×X frames.
+- **mupattern-rs** (Rust CLI): `convert` (ND2→TIFF), etc. Uses `nd2-rs` (git or crates.io). Build: `cargo build`; run: `cargo run -- convert --input f.nd2 --pos 0 --time 0:10 --output out --yes`. ND2 access: `sizes()`, `read_frame_2d(p,t,c,z)`.
+- **nd2-rs** (external): Pure Rust ND2 reader at github.com/keejkrej/nd2-rs. Dep: `nd2-rs = { git = "..." }` or `nd2-rs = "0.1"`. API: `sizes()` → (P,T,C,Z,Y,X), `read_frame_2d(p,t,c,z)` → Y×X u16.
+- **crops.zarr** layout (Zarr v3 only): `pos/{pos:03d}/crop/{crop_id}` arrays (T, C, Z, H, W); optional `pos/{pos:03d}/background` (T, C, Z) per-pixel. Expression CSV: `t,crop,intensity,area,background`. Tissue: `mupattern tissue` runs segment then analyze (writes **masks.zarr** + CSV `t,crop,cell,total_fluorescence,cell_area,background`); `plot tissue` uses `(total_fluorescence/cell_area)-background > gfp_threshold` for GFP+.
+- JS app (web): `mupattern-web` — lite web app (landing, register, see), deployed on Firebase; run with `bun run dev` from that directory
+- JS app (desktop): `mupattern-desktop` — Electron workspace-first app; Tasks (convert, crop, movie, expression, kill) with Clean completed; run with `bun run dev` from that directory
 
 ## Product direction
 
-- `mupattern` is frozen/maintenance-only. Avoid feature work unless explicitly requested; only apply critical fixes/docs tweaks.
-- New feature development should go to `mustudio`.
+- `mupattern-web` is frozen/maintenance-only. Avoid feature work unless explicitly requested; only apply critical fixes/docs tweaks.
+- New feature development should go to `mupattern-desktop`.
 

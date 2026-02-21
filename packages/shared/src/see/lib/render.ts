@@ -1,4 +1,4 @@
-import type { ContourPoint } from "./contours"
+import type { ContourPoint } from "./contours";
 
 /**
  * Render a uint16 grayscale buffer to a canvas with contrast adjustment.
@@ -10,7 +10,7 @@ export function renderUint16ToCanvas(
   width: number,
   height: number,
   contrastMin: number,
-  contrastMax: number
+  contrastMax: number,
 ) {
   canvas.width = width;
   canvas.height = height;
@@ -39,10 +39,7 @@ export function renderUint16ToCanvas(
 /**
  * Draw spot markers as cyan hollow circles on an already-rendered canvas.
  */
-export function drawSpots(
-  canvas: HTMLCanvasElement,
-  spots: { y: number; x: number }[]
-) {
+export function drawSpots(canvas: HTMLCanvasElement, spots: { y: number; x: number }[]) {
   const ctx = canvas.getContext("2d");
   if (!ctx || spots.length === 0) return;
   ctx.strokeStyle = "cyan";
@@ -60,21 +57,21 @@ export function drawSpots(
 export function drawMaskContours(
   canvas: HTMLCanvasElement,
   contours: ContourPoint[][],
-  color: string = "lime"
+  color: string = "lime",
 ) {
-  const ctx = canvas.getContext("2d")
-  if (!ctx || contours.length === 0) return
-  ctx.strokeStyle = color
-  ctx.lineWidth = 1
+  const ctx = canvas.getContext("2d");
+  if (!ctx || contours.length === 0) return;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
   for (const contour of contours) {
-    if (contour.length < 2) continue
-    ctx.beginPath()
-    ctx.moveTo(contour[0].x, contour[0].y)
+    if (contour.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(contour[0].x, contour[0].y);
     for (let i = 1; i < contour.length; i++) {
-      ctx.lineTo(contour[i].x, contour[i].y)
+      ctx.lineTo(contour[i].x, contour[i].y);
     }
-    ctx.closePath()
-    ctx.stroke()
+    ctx.closePath();
+    ctx.stroke();
   }
 }
 
