@@ -1,0 +1,16 @@
+[package]
+name = "mupattern-crop"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone crop tool for MuPattern TIFF folders"
+
+[[bin]]
+name = "mupattern-crop"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+serde_json = "1"
+tiff = "0.11"
+zarrs = { version = "0.23", default-features = false, features = ["filesystem", "blosc"] }

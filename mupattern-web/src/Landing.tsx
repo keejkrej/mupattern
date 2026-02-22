@@ -485,7 +485,7 @@ export default function LandingPage() {
             style={{ animationDelay: "700ms" }}
           >
             <a href="/download">
-              <Button size="lg" className="gap-2 relative transition-shadow duration-300 hover:shadow-[0_0_20px_rgba(128,128,128,0.15),0_0_60px_rgba(128,128,128,0.08)]">
+              <Button variant="outline" size="lg" className="gap-2">
                 <Download className="size-4" />
                 Get Desktop App
               </Button>
@@ -635,7 +635,7 @@ export default function LandingPage() {
           </p>
           <div className="flex gap-4 justify-center flex-wrap">
             <a href="/download">
-              <Button size="lg" className="gap-2 relative transition-shadow duration-300 hover:shadow-[0_0_20px_rgba(128,128,128,0.15),0_0_60px_rgba(128,128,128,0.08)]">
+              <Button variant="outline" size="lg" className="gap-2">
                 <Download className="size-4" />
                 Get Desktop App
               </Button>

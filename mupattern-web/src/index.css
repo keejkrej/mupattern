@@ -75,6 +75,8 @@
 }
 
 @theme inline {
+  --font-mono: "Bitcount Single", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
