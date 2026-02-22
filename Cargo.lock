@@ -333,6 +333,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cellpose-rs"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "ndarray",
+ "ort",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1168,6 +1177,7 @@ dependencies = [
 name = "mupattern-rs"
 version = "0.1.0"
 dependencies = [
+ "cellpose-rs",
  "clap",
  "image",
  "nd2-rs",

@@ -9,6 +9,7 @@ name = "mupattern"
 path = "src/main.rs"
 
 [dependencies]
+cellpose-rs = { path = "../../cellpose-rs" }
 clap = { version = "4", features = ["derive"] }
 nd2-rs = "0.1.2"
 ndarray = "0.17"
