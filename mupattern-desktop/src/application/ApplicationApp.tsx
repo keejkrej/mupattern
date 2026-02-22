@@ -8,13 +8,18 @@ import { ExpressionTab } from "./expression/ExpressionTab";
 import { ExpressionLeftSidebar } from "./expression/ExpressionLeftSidebar";
 import { KillTab } from "./kill/KillTab";
 import { KillLeftSidebar } from "./kill/KillLeftSidebar";
+import { TissueTab } from "./tissue/TissueTab";
+import { TissueLeftSidebar } from "./tissue/TissueLeftSidebar";
 
 const APPLICATION_TAB_KEY = "mupattern-application-tab";
 
-function getStoredTab(): "expression" | "kill" {
+type ApplicationTab = "expression" | "kill" | "tissue";
+
+function getStoredTab(): ApplicationTab {
   if (typeof window === "undefined") return "expression";
   const stored = sessionStorage.getItem(APPLICATION_TAB_KEY);
-  return stored === "kill" ? "kill" : "expression";
+  if (stored === "kill" || stored === "tissue") return stored;
+  return "expression";
 }
 
 export default function ApplicationApp() {
@@ -28,9 +33,18 @@ export default function ApplicationApp() {
       background: number;
     }>;
     killRows?: Array<{ t: number; crop: string; label: boolean }>;
+    tissueRows?: Array<{
+      t: number;
+      crop: string;
+      cell: number;
+      total_fluorescence: number;
+      cell_area: number;
+      background: number;
+    }>;
   } | null;
   const expressionRowsFromNav = locationState?.expressionRows ?? null;
   const killRowsFromNav = locationState?.killRows ?? null;
+  const tissueRowsFromNav = locationState?.tissueRows ?? null;
   const workspaces = useStore(workspaceStore, (s) => s.workspaces);
   const activeId = useStore(workspaceStore, (s) => s.activeId);
   const activeWorkspace = activeId ? (workspaces.find((w) => w.id === activeId) ?? null) : null;
@@ -48,7 +62,18 @@ export default function ApplicationApp() {
     killRowsFromNav ?? null,
   );
   const [selectedKillPath, setSelectedKillPath] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"expression" | "kill">(getStoredTab);
+  const [tissueRows, setTissueRows] = useState<
+    Array<{
+      t: number;
+      crop: string;
+      cell: number;
+      total_fluorescence: number;
+      cell_area: number;
+      background: number;
+    }> | null
+  >(null);
+  const [selectedTissuePath, setSelectedTissuePath] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ApplicationTab>(getStoredTab);
 
   useEffect(() => {
     sessionStorage.setItem(APPLICATION_TAB_KEY, activeTab);
@@ -66,10 +91,35 @@ export default function ApplicationApp() {
     }
   }, [killRowsFromNav]);
 
+  useEffect(() => {
+    if (tissueRowsFromNav && tissueRowsFromNav.length > 0) {
+      setTissueRows(tissueRowsFromNav);
+      setActiveTab("tissue");
+    }
+  }, [tissueRowsFromNav]);
+
   const handleKillSelect = useCallback(
     (path: string, rows: Array<{ t: number; crop: string; label: boolean }>) => {
       setSelectedKillPath(path);
       setKillRows(rows);
+    },
+    [],
+  );
+
+  const handleTissueSelect = useCallback(
+    (
+      path: string,
+      rows: Array<{
+        t: number;
+        crop: string;
+        cell: number;
+        total_fluorescence: number;
+        cell_area: number;
+        background: number;
+      }>,
+    ) => {
+      setSelectedTissuePath(path);
+      setTissueRows(rows);
     },
     [],
   );
@@ -87,7 +137,7 @@ export default function ApplicationApp() {
 
   return (
     <div className="flex flex-col h-screen">
-      <AppHeader title="Application" subtitle="Expression and kill analysis" backTo="/workspace" />
+      <AppHeader title="Application" subtitle="Expression, kill, and tissue analysis" backTo="/workspace" />
 
       {!activeWorkspace ? (
         <div className="flex-1 flex items-center justify-center p-6">
@@ -99,7 +149,7 @@ export default function ApplicationApp() {
         <div className="flex flex-1 min-h-0">
           <Tabs.Root
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as "expression" | "kill")}
+            onValueChange={(v) => setActiveTab(v as ApplicationTab)}
             className="flex flex-1 min-h-0 flex-col"
           >
             <div className="flex border-b border-border px-4">
@@ -115,6 +165,12 @@ export default function ApplicationApp() {
                   className="px-4 py-2 rounded-t border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-primary/5 text-sm font-medium transition-colors"
                 >
                   Kill
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="tissue"
+                  className="px-4 py-2 rounded-t border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-primary/5 text-sm font-medium transition-colors"
+                >
+                  Tissue
                 </Tabs.Trigger>
               </Tabs.List>
             </div>
@@ -143,6 +199,19 @@ export default function ApplicationApp() {
                 />
                 <div className="flex-1 overflow-auto p-6">
                   <KillTab workspace={activeWorkspace} initialRows={killRows} />
+                </div>
+              </Tabs.Content>
+              <Tabs.Content
+                value="tissue"
+                className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden flex"
+              >
+                <TissueLeftSidebar
+                  workspace={activeWorkspace}
+                  selectedPath={selectedTissuePath}
+                  onSelect={handleTissueSelect}
+                />
+                <div className="flex-1 overflow-auto p-6">
+                  <TissueTab workspace={activeWorkspace} rows={tissueRows} />
                 </div>
               </Tabs.Content>
             </div>

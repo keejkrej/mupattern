@@ -9,7 +9,8 @@ name = "mupattern"
 path = "src/main.rs"
 
 [dependencies]
-cellpose-rs = { path = "../../cellpose-rs" }
+cellpose-rs = { git = "https://github.com/keejkrej/cellpose-rs" }
+cellsam-rs = { git = "https://github.com/keejkrej/cellsam-rs" }
 clap = { version = "4", features = ["derive"] }
 nd2-rs = "0.1.2"
 ndarray = "0.17"

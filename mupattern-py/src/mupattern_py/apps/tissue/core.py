@@ -1,4 +1,4 @@
-"""Tissue core – segment crops with Cellpose v4 or fluo-only watershed, measure per-cell fluorescence, plot."""
+"""Tissue core – segment crops with Cellpose v4, measure per-cell fluorescence, plot."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import zarr
 from scipy import ndimage
-from skimage.segmentation import watershed
 
 from ...common.io_zarr import open_zarr_group
 from ...common.progress import ProgressCallback
@@ -43,96 +42,6 @@ def _segment_frame_peaks(
     _, indices = ndimage.distance_transform_edt(~seed_binary, return_indices=True)
     labels = seed_label[indices[0], indices[1]]
     return np.asarray(labels, dtype=np.uint32)
-
-
-def _segment_frame_watershed(
-    fluo: np.ndarray,
-    background: float,
-    *,
-    sigma: float = 2.0,
-    margin: float = 0.0,
-    min_distance: int = 5,
-) -> np.ndarray:
-    """Blur, threshold with background; watershed on foreground only. Returns uint32 mask (0=bg, 1..N=nuclei)."""
-    fluo = np.asarray(fluo, dtype=np.float64)
-    if sigma > 0:
-        fluo = ndimage.gaussian_filter(fluo, sigma=sigma, mode="nearest")
-    foreground = fluo > (background + margin)
-    if not np.any(foreground):
-        return np.zeros(fluo.shape, dtype=np.uint32)
-    dist = ndimage.distance_transform_edt(foreground)
-    size = max(3, 2 * min_distance + 1)
-    max_dist = ndimage.maximum_filter(dist, size=size, mode="nearest")
-    peak_mask = (dist >= max_dist) & (dist > 0.5)
-    markers, n_seeds = ndimage.label(peak_mask)
-    if n_seeds == 0:
-        return np.zeros(fluo.shape, dtype=np.uint32)
-    ws = watershed(-dist, markers, mask=foreground)
-    return np.asarray(ws, dtype=np.uint32)
-
-
-def run_segment_watershed(
-    zarr_path: Path,
-    pos: int,
-    channel_fluorescence: int,
-    output_masks: Path,
-    *,
-    sigma: float = 2.0,
-    margin: float = 0.0,
-    min_distance: int = 5,
-    on_progress: ProgressCallback | None = None,
-) -> None:
-    """Segment each crop per frame: blur, threshold with background (or median of frame), watershed on foreground. Same masks.zarr layout."""
-    root = open_zarr_group(zarr_path, mode="r")
-    pos_grp = root[f"pos/{pos:03d}"]
-    crop_grp = pos_grp["crop"]
-    crop_ids = sorted(crop_grp.keys())
-    try:
-        bg_arr = pos_grp["background"]
-    except KeyError:
-        bg_arr = None
-
-    out_root = zarr.open_group(str(output_masks), mode="a", zarr_format=3)
-    out_pos_grp = out_root.require_group(f"pos/{pos:03d}")
-    mask_crop_grp = out_pos_grp.require_group("crop")
-
-    n_crops = len(crop_ids)
-    total_work = sum(int(crop_grp[cid].shape[0]) for cid in crop_ids)
-    done = 0
-
-    for crop_idx, crop_id in enumerate(crop_ids):
-        arr = crop_grp[crop_id]
-        n_times, _, _, h, w = arr.shape
-        mask_arr = mask_crop_grp.zeros(
-            name=crop_id,
-            shape=(n_times, h, w),
-            chunks=(1, h, w),
-            dtype=np.uint32,
-            overwrite=True,
-        )
-        mask_arr.attrs["axis_names"] = ["t", "y", "x"]
-
-        for t in range(n_times):
-            fluo = np.array(arr[t, channel_fluorescence, 0], dtype=np.float64)
-            if bg_arr is not None:
-                background = float(bg_arr[t, channel_fluorescence, 0])
-            else:
-                background = float(np.median(fluo))
-            masks = _segment_frame_watershed(
-                fluo,
-                background,
-                sigma=sigma,
-                margin=margin,
-                min_distance=min_distance,
-            )
-            mask_arr[t] = masks
-
-            done += 1
-            if on_progress and total_work > 0:
-                on_progress(done / total_work, f"Crop {crop_idx + 1}/{n_crops}, frame {t + 1}/{n_times}")
-
-    if on_progress:
-        on_progress(1.0, "Done")
 
 
 def run_segment(
@@ -202,11 +111,13 @@ def run_segment(
                     normalize=True,
                 )
                 masks = masks_list[0] if isinstance(masks_list, list) else masks_list
-            else:
+            elif backend == "cellsam":
                 mask, _, _ = segment_cellular_image(
                     image, model=model, normalize=True, device=device
                 )
                 masks = np.asarray(mask, dtype=np.uint32)
+            else:
+                raise ValueError(f"Unknown segment backend {backend!r}. Use 'cellpose' or 'cellsam'.")
 
             mask_arr[t] = np.asarray(masks, dtype=np.uint32)
 
@@ -240,7 +151,7 @@ def run_analyze(
     mask_root = open_zarr_group(masks_path, mode="r")
     mask_crop_grp = mask_root[f"pos/{pos:03d}/crop"]
 
-    rows: list[tuple[int, str, int, float, int, float]] = []
+    rows: list[tuple[int, str, int, float, int, int]] = []
     n_crops = len(crop_ids)
     total_work = sum(int(crop_grp[cid].shape[0]) for cid in crop_ids)
     done = 0
@@ -253,9 +164,9 @@ def run_analyze(
             fluo = np.array(crop_arr[t, channel_fluorescence, 0], dtype=np.float64)
             masks = np.array(mask_arr[t])
             if bg_arr is not None:
-                background = float(bg_arr[t, channel_fluorescence, 0])
+                background = int(bg_arr[t, channel_fluorescence, 0])  # crops.zarr background is uint16
             else:
-                background = float(np.median(fluo))
+                background = int(np.median(fluo))
             for cell_id in np.unique(masks):
                 if cell_id == 0:
                     continue
@@ -286,9 +197,6 @@ def run_pipeline(
     method: str = "cellpose",
     channel_phase: int | None = None,
     masks_path: Path | None = None,
-    sigma: float = 2.0,
-    margin: float = 0.0,
-    min_distance: int = 5,
     on_progress: ProgressCallback | None = None,
 ) -> None:
     """Run segment then analyze: write masks, then CSV. masks_path defaults to output.parent / masks.zarr."""
@@ -306,19 +214,8 @@ def run_pipeline(
             backend=method,
             on_progress=lambda p, m: on_progress(p * 0.5, m) if on_progress else None,
         )
-    elif method == "watershed":
-        run_segment_watershed(
-            zarr_path,
-            pos,
-            channel_fluorescence,
-            masks,
-            sigma=sigma,
-            margin=margin,
-            min_distance=min_distance,
-            on_progress=lambda p, m: on_progress(p * 0.5, m) if on_progress else None,
-        )
     else:
-        raise ValueError(f"Unknown method {method!r}. Use 'cellpose', 'cellsam', or 'watershed'.")
+        raise ValueError(f"Unknown method {method!r}. Use 'cellpose' or 'cellsam'.")
 
     run_analyze(
         zarr_path,

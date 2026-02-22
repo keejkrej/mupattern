@@ -1,16 +1,16 @@
-//! Tissue: segment cells with Cellpose cpsam (ONNX) + per-cell fluorescence analysis.
+//! Tissue: segment cells with Cellpose or CellSAM (ONNX) + per-cell fluorescence analysis.
 //!
 //! Pipeline:
 //!   For each crop × frame:
-//!     1. Preprocess: stack [phase, fluo, phase] as 3-ch float32, percentile-normalize,
-//!        pad to multiple of 256, tile into 256×256 patches.
-//!     2. ONNX inference via cellpose-rs: produces (dY, dX, cellprob) per tile.
-//!     3. Post-process flows → integer mask (Cellpose dynamics via cellpose-rs).
+//!     1. Preprocess: stack [phase, fluo, phase] as 3-ch float32.
+//!     2. ONNX inference via cellpose-rs or cellsam-rs.
+//!     3. Post-process → integer mask.
 //!   Write masks to masks.zarr.
 //!   Then analyze: per-cell total_fluorescence, cell_area, background → CSV.
 
 use clap::Args;
-use cellpose_rs::{CellposeSession, SegmentParams};
+use cellpose_rs::{CellposeSession, SegmentParams as CellposeParams};
+use cellsam_rs::{CellsamSession, SegmentParams as CellsamParams};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -35,7 +35,10 @@ pub struct TissueArgs {
     /// Channel index for fluorescence
     #[arg(long)]
     pub channel_fluorescence: u32,
-    /// Path to model directory containing model.onnx
+    /// Segment method: cellpose | cellsam
+    #[arg(long, default_value = "cellpose")]
+    pub method: String,
+    /// Path to model directory. Cellpose: model.onnx. CellSAM: image_encoder.onnx, cellfinder.onnx, mask_decoder.onnx, image_pe.npy
     #[arg(long)]
     pub model: String,
     /// Output CSV path (t,crop,cell,total_fluorescence,cell_area,background)
@@ -55,6 +58,34 @@ pub struct TissueArgs {
 // ---------------------------------------------------------------------------
 // Preprocessing helpers (read from zarr)
 // ---------------------------------------------------------------------------
+
+/// O(n) median of u16 slice via select_nth_unstable. Uses a copy to avoid mutating input.
+fn median_u16(values: &[u16]) -> u16 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut v: Vec<u16> = values.to_vec();
+    let mid = v.len() / 2;
+    if v.len() % 2 == 1 {
+        v.select_nth_unstable(mid);
+        v[mid]
+    } else {
+        v.select_nth_unstable(mid);
+        let left_max = v[..mid].iter().max().copied().unwrap();
+        ((left_max as u32 + v[mid] as u32) / 2) as u16
+    }
+}
+
+/// Build (3, H, W) CHW for CellSAM: [phase, fluo, phase], min-max normalised per channel.
+fn build_chw_cellsam(mut phase: Vec<f32>, mut fluo: Vec<f32>, h: usize, w: usize) -> Vec<f32> {
+    cellsam_rs::preprocess::minmax_normalize(&mut phase);
+    cellsam_rs::preprocess::minmax_normalize(&mut fluo);
+    let mut out = vec![0.0f32; 3 * h * w];
+    out[..h * w].copy_from_slice(&phase);
+    out[h * w..2 * h * w].copy_from_slice(&fluo);
+    out[2 * h * w..].copy_from_slice(&phase);
+    out
+}
 
 /// Read a zarr crop as f32 for a given (t, channel): shape (H, W).
 fn read_frame_f32(
@@ -120,69 +151,121 @@ fn run_segment(
         return Err("No crops found.".into());
     }
 
-    let model_file = Path::new(&args.model).join("model.onnx");
-    if !model_file.exists() {
+    let model_dir = Path::new(&args.model);
+    let method = args.method.as_str();
+
+    if method == "cellpose" {
+        let model_file = model_dir.join("model.onnx");
+        if !model_file.exists() {
+            return Err(format!(
+                "Cellpose model not found at {}. Export with: python scripts/export_onnx.py",
+                model_file.display()
+            ).into());
+        }
+    } else if method == "cellsam" {
+        for name in ["image_encoder.onnx", "cellfinder.onnx", "mask_decoder.onnx", "image_pe.npy"] {
+            if !model_dir.join(name).exists() {
+                return Err(format!(
+                    "CellSAM model file not found: {}/{}",
+                    model_dir.display(),
+                    name
+                ).into());
+            }
+        }
+    } else {
         return Err(format!(
-            "Model not found at {}. Export with: python scripts/export_onnx.py",
-            model_file.display()
+            "Unknown method {method:?}. Use 'cellpose' or 'cellsam'."
         ).into());
     }
-
-    let mut session = CellposeSession::new(&model_file, args.cpu)?;
 
     let crop_store = zarr::open_store(crops_zarr)?;
     let mask_store = zarr::open_store(masks_path)?;
     ensure_mask_groups(&mask_store, &pos_id)?;
 
-    // Count total frames for progress
     let mut total_frames = 0u64;
     for crop_id in &crop_ids {
         let arr = zarr::open_array(&crop_store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
         total_frames += arr.shape()[0];
     }
-    let mut done = 0u64;
     let n_crops = crop_ids.len();
 
-    for (ci, crop_id) in crop_ids.iter().enumerate() {
-        let arr = zarr::open_array(&crop_store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
-        let shape = arr.shape();
-        let n_t = shape[0] as usize;
-        let h = shape[3] as usize;
-        let w = shape[4] as usize;
+    if method == "cellpose" {
+        let mut session = CellposeSession::new(&model_dir.join("model.onnx"), args.cpu)?;
+        let mut done = 0u64;
+        for (ci, crop_id) in crop_ids.iter().enumerate() {
+            let arr = zarr::open_array(&crop_store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
+            let shape = arr.shape();
+            let n_t = shape[0] as usize;
+            let h = shape[3] as usize;
+            let w = shape[4] as usize;
 
-        // Create mask array: (T, H, W) u16
-        let mask_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
-        let mut attrs = serde_json::Map::new();
-        attrs.insert("axis_names".to_string(), serde_json::json!(["t", "y", "x"]));
-        let mask_arr = zarr::create_array_u16(
-            &mask_store,
-            &mask_path,
-            vec![n_t as u64, h as u64, w as u64],
-            vec![1, h as u64, w as u64],
-            Some(attrs),
-        )?;
+            let mask_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
+            let mut attrs = serde_json::Map::new();
+            attrs.insert("axis_names".to_string(), serde_json::json!(["t", "y", "x"]));
+            let mask_arr = zarr::create_array_u16(
+                &mask_store,
+                &mask_path,
+                vec![n_t as u64, h as u64, w as u64],
+                vec![1, h as u64, w as u64],
+                Some(attrs),
+            )?;
 
-        for t in 0..n_t {
-            let phase = read_frame_f32(&arr, t as u64, args.channel_phase as u64, h, w)?;
-            let fluo  = read_frame_f32(&arr, t as u64, args.channel_fluorescence as u64, h, w)?;
-
-            let chw = cellpose_rs::preprocess::build_chw_image(phase, fluo, h, w);
-
-            let params = SegmentParams {
-                batch_size: args.batch_size,
-                ..Default::default()
-            };
-            let masks_u32 = session.segment(&chw, h, w, params)?;
-            let masks_u16: Vec<u16> = masks_u32.iter().map(|&v| v as u16).collect();
-
-            zarr::store_chunk_u16(&mask_arr, &[t as u64, 0, 0], &masks_u16)?;
-
-            done += 1;
-            progress(
-                done as f64 / total_frames as f64 * 0.5,
-                &format!("Segment crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
-            );
+            for t in 0..n_t {
+                let phase = read_frame_f32(&arr, t as u64, args.channel_phase as u64, h, w)?;
+                let fluo = read_frame_f32(&arr, t as u64, args.channel_fluorescence as u64, h, w)?;
+                let chw = cellpose_rs::preprocess::build_chw_image(phase, fluo, h, w);
+                let params = CellposeParams {
+                    batch_size: args.batch_size,
+                    ..Default::default()
+                };
+                let masks_u32 = session.segment(&chw, h, w, params)?;
+                let masks_u16: Vec<u16> = masks_u32.iter().map(|&v| v as u16).collect();
+                zarr::store_chunk_u16(&mask_arr, &[t as u64, 0, 0], &masks_u16)?;
+                done += 1;
+                progress(
+                    done as f64 / total_frames as f64 * 0.5,
+                    &format!("Segment crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
+                );
+            }
         }
+    } else if method == "cellsam" {
+        let mut session = CellsamSession::new(model_dir, args.cpu)?;
+        let mut done = 0u64;
+        for (ci, crop_id) in crop_ids.iter().enumerate() {
+            let arr = zarr::open_array(&crop_store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
+            let shape = arr.shape();
+            let n_t = shape[0] as usize;
+            let h = shape[3] as usize;
+            let w = shape[4] as usize;
+
+            let mask_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
+            let mut attrs = serde_json::Map::new();
+            attrs.insert("axis_names".to_string(), serde_json::json!(["t", "y", "x"]));
+            let mask_arr = zarr::create_array_u16(
+                &mask_store,
+                &mask_path,
+                vec![n_t as u64, h as u64, w as u64],
+                vec![1, h as u64, w as u64],
+                Some(attrs),
+            )?;
+
+            for t in 0..n_t {
+                let phase = read_frame_f32(&arr, t as u64, args.channel_phase as u64, h, w)?;
+                let fluo = read_frame_f32(&arr, t as u64, args.channel_fluorescence as u64, h, w)?;
+                let chw = build_chw_cellsam(phase, fluo, h, w);
+                let params = CellsamParams::default();
+                let masks_u32 = session.segment(&chw, h, w, params)?;
+                let masks_u16: Vec<u16> = masks_u32.iter().map(|&v| v as u16).collect();
+                zarr::store_chunk_u16(&mask_arr, &[t as u64, 0, 0], &masks_u16)?;
+                done += 1;
+                progress(
+                    done as f64 / total_frames as f64 * 0.5,
+                    &format!("Segment crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
+                );
+            }
+        }
+    } else {
+        unreachable!("method validated above");
     }
     Ok(())
 }
@@ -213,13 +296,18 @@ fn run_analyze(
 
     // Load background array if present
     let bg_path = format!("/pos/{}/background", pos_id);
-    let mut backgrounds: Vec<f64> = Vec::new();
+    let mut backgrounds: Vec<u16> = Vec::new();
     if let Ok(bg_arr) = zarr::open_array(&crop_store, &bg_path) {
         let sh = bg_arr.shape();
         if sh.len() >= 2 && (args.channel_fluorescence as u64) < sh[1] {
             for t in 0..sh[0] {
-                let chunk = zarr::read_chunk_f64(&bg_arr, &[t, args.channel_fluorescence as u64, 0]);
-                backgrounds.push(chunk.ok().and_then(|v| v.first().copied()).unwrap_or(0.0));
+                let chunk_indices = [t, args.channel_fluorescence as u64, 0];
+                backgrounds.push(
+                    zarr::read_chunk_u16(&bg_arr, &chunk_indices)
+                        .ok()
+                        .and_then(|d| d.first().copied())
+                        .unwrap_or(0),
+                );
             }
         }
     }
@@ -271,7 +359,10 @@ fn run_analyze(
                 }
             }
 
-            let bg_val = backgrounds.get(t).copied().unwrap_or(0.0);
+            let bg_val = backgrounds
+                .get(t)
+                .copied()
+                .unwrap_or_else(|| median_u16(&fluo_raw));
 
             for lbl in 1..=max_label as usize {
                 if counts[lbl] > 0 {

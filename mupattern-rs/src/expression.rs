@@ -55,18 +55,19 @@ pub fn run(
     let store = zarr::open_store(&crops_zarr)?;
 
     let bg_path = format!("/pos/{}/background", pos_id);
-    let mut backgrounds: Vec<f64> = Vec::new();
+    let mut backgrounds: Vec<u16> = Vec::new();
     if let Ok(bg_arr) = zarr::open_array(&store, &bg_path) {
         let shape = bg_arr.shape();
         if shape.len() >= 2 && args.channel < shape[1] as u32 {
             let n_t = shape[0];
             for t in 0..n_t {
                 let chunk_indices = vec![t, args.channel as u64, 0];
-                if let Ok(data) = zarr::read_chunk_f64(&bg_arr, &chunk_indices) {
-                    backgrounds.push(data.first().copied().unwrap_or(0.0));
-                } else {
-                    backgrounds.push(0.0);
-                }
+                backgrounds.push(
+                    zarr::read_chunk_u16(&bg_arr, &chunk_indices)
+                        .ok()
+                        .and_then(|d| d.first().copied())
+                        .unwrap_or(0),
+                );
             }
         }
     }
@@ -90,7 +91,7 @@ pub fn run(
             let background = if (t as usize) < backgrounds.len() {
                 backgrounds[t as usize]
             } else {
-                0.0
+                0
             };
             rows.push(format!("{},{},{},{},{}", t, crop_id, intensity, area, background));
         }

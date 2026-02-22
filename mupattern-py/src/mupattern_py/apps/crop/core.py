@@ -40,6 +40,20 @@ def _discover_tiffs(pos_dir: Path) -> dict[tuple[int, int, int], Path]:
     return index
 
 
+def _median_outside_mask(frame: np.ndarray, mask: np.ndarray) -> np.uint16:
+    """Median of frame pixels outside mask. O(n) via partition. Integer space, returns uint16."""
+    values = np.asarray(frame[~mask].flatten(), dtype=np.uint32)
+    if values.size == 0:
+        return np.uint16(0)
+    mid = values.size // 2
+    if values.size % 2 == 1:
+        np.partition(values, mid)
+        return np.uint16(values[mid])
+    np.partition(values, mid)
+    left_max = int(np.max(values[:mid]))
+    return np.uint16((left_max + int(values[mid])) // 2)
+
+
 def _axis_range(index: dict[tuple[int, int, int], Path]) -> tuple[int, int, int]:
     """Return (n_channels, n_times, n_z) from the discovered index."""
     cs = {k[0] for k in index}
@@ -111,7 +125,7 @@ def run_crop(
             name=f"pos/{pos:03d}/background",
             shape=(n_times, n_channels, n_z),
             chunks=(1, 1, 1),
-            dtype=np.float64,
+            dtype=np.uint16,
             overwrite=True,
         )
         bg_arr.attrs["axis_names"] = ["t", "c", "z"]
@@ -125,7 +139,7 @@ def run_crop(
             x, y, w, h = bb["x"], bb["y"], bb["w"], bb["h"]
             arrays[crop_idx][t, c, z] = frame[y : y + h, x : x + w]
         if bg_arr is not None:
-            bg_arr[t, c, z] = float(np.median(frame[~mask]))
+            bg_arr[t, c, z] = _median_outside_mask(frame, mask)
 
         if on_progress and total > 0:
             on_progress((i + 1) / total, f"Reading frames {i + 1}/{total}")

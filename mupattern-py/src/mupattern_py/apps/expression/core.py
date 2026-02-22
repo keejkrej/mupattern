@@ -26,7 +26,7 @@ def run_analyze(
 
     bg_arr = root[f"pos/{pos:03d}/background"]
 
-    rows: list[tuple[int, str, int, int, float]] = []
+    rows: list[tuple[int, str, int, int, int]] = []
     total = len(crop_ids)
     for i, crop_id in enumerate(crop_ids):
         arr = crop_grp[crop_id]
@@ -35,7 +35,7 @@ def run_analyze(
 
         for t in range(n_times):
             intensity = int(np.array(arr[t, channel, 0]).sum())
-            background = float(bg_arr[t, channel, 0])  # per-pixel
+            background = int(bg_arr[t, channel, 0])  # per-pixel (crops.zarr background is uint16)
             rows.append((t, crop_id, intensity, area, background))
 
         if on_progress and total > 0:

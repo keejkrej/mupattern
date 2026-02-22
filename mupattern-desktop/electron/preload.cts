@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
       ipcRenderer.invoke("tasks:pick-expression-output", suggestedPath) as Promise<{
         path: string;
       } | null>,
+    pickTissueModel: () =>
+      ipcRenderer.invoke("tasks:pick-tissue-model") as Promise<{ path: string } | null>,
+    pickTissueOutput: (suggestedPath?: string) =>
+      ipcRenderer.invoke("tasks:pick-tissue-output", suggestedPath) as Promise<{
+        path: string;
+      } | null>,
     pickKillModel: () =>
       ipcRenderer.invoke("tasks:pick-kill-model") as Promise<{ path: string } | null>,
     pickMovieOutput: () =>
@@ -102,6 +108,26 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
       ) => callback(ev);
       ipcRenderer.on("tasks:expression-analyze-progress", fn);
       return () => ipcRenderer.removeListener("tasks:expression-analyze-progress", fn);
+    },
+    runTissueAnalyze: (payload: {
+      taskId: string;
+      workspacePath: string;
+      pos: number;
+      channelPhase: number;
+      channelFluorescence: number;
+      method: string;
+      model: string;
+      output: string;
+    }) => ipcRenderer.invoke("tasks:run-tissue-analyze", payload),
+    onTissueAnalyzeProgress: (
+      callback: (ev: { taskId: string; progress: number; message: string }) => void,
+    ) => {
+      const fn = (
+        _event: Electron.IpcRendererEvent,
+        ev: { taskId: string; progress: number; message: string },
+      ) => callback(ev);
+      ipcRenderer.on("tasks:tissue-analyze-progress", fn);
+      return () => ipcRenderer.removeListener("tasks:tissue-analyze-progress", fn);
     },
     runKillPredict: (payload: {
       taskId: string;
@@ -175,6 +201,25 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
     loadKillCsv: (path: string) =>
       ipcRenderer.invoke("application:load-kill-csv", path) as Promise<
         | { ok: true; rows: Array<{ t: number; crop: string; label: boolean }> }
+        | { ok: false; error: string }
+      >,
+    listTissueCsv: (workspacePath: string) =>
+      ipcRenderer.invoke("application:list-tissue-csv", workspacePath) as Promise<
+        Array<{ posId: string; path: string }>
+      >,
+    loadTissueCsv: (path: string) =>
+      ipcRenderer.invoke("application:load-tissue-csv", path) as Promise<
+        | {
+            ok: true;
+            rows: Array<{
+              t: number;
+              crop: string;
+              cell: number;
+              total_fluorescence: number;
+              cell_area: number;
+              background: number;
+            }>;
+          }
         | { ok: false; error: string }
       >,
   },

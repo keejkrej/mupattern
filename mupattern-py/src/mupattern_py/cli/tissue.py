@@ -33,7 +33,7 @@ def tissue(
     ],
     method: Annotated[
         str,
-        typer.Option("--method", help="Segment method: 'cellpose' | 'cellsam' | 'watershed'."),
+        typer.Option("--method", help="Segment method: 'cellpose' | 'cellsam'."),
     ] = "cellpose",
     channel_phase: Annotated[
         int | None,
@@ -43,18 +43,6 @@ def tissue(
         Path | None,
         typer.Option("--masks", help="Output masks path (default: output dir / masks.zarr)."),
     ] = None,
-    sigma: Annotated[
-        float,
-        typer.Option("--sigma", help="Gaussian blur sigma (watershed method)."),
-    ] = 2.0,
-    margin: Annotated[
-        float,
-        typer.Option("--margin", help="Add to background for threshold (watershed: fluo > background + margin)."),
-    ] = 0.0,
-    min_distance: Annotated[
-        int,
-        typer.Option("--min-distance", help="Min pixels between watershed seeds."),
-    ] = 5,
 ) -> None:
     """Run segment then analyze: write masks.zarr, then tissue CSV."""
     try:
@@ -66,9 +54,6 @@ def tissue(
             method=method,
             channel_phase=channel_phase,
             masks_path=masks,
-            sigma=sigma,
-            margin=margin,
-            min_distance=min_distance,
             on_progress=_progress_echo,
         )
         typer.echo(f"Wrote masks and {output}")

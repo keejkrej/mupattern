@@ -227,6 +227,39 @@ interface RunKillPredictFailure {
 
 type RunKillPredictResponse = RunKillPredictSuccess | RunKillPredictFailure;
 
+interface TissueAnalyzeRow {
+  t: number;
+  crop: string;
+  cell: number;
+  total_fluorescence: number;
+  cell_area: number;
+  background: number;
+}
+
+interface RunTissueAnalyzeRequest {
+  taskId: string;
+  workspacePath: string;
+  pos: number;
+  channelPhase: number;
+  channelFluorescence: number;
+  method: string;
+  model: string;
+  output: string;
+}
+
+interface RunTissueAnalyzeSuccess {
+  ok: true;
+  output: string;
+  rows: TissueAnalyzeRow[];
+}
+
+interface RunTissueAnalyzeFailure {
+  ok: false;
+  error: string;
+}
+
+type RunTissueAnalyzeResponse = RunTissueAnalyzeSuccess | RunTissueAnalyzeFailure;
+
 interface LoadMaskFrameRequest {
   masksPath: string;
   posId: string;
@@ -339,6 +372,31 @@ async function parseExpressionCsv(csvPath: string): Promise<ExpressionAnalyzeRow
           intensity: Number.parseInt(parts[2], 10),
           area: Number.parseInt(parts[3], 10),
           background: Number.parseFloat(parts[4]),
+        });
+      }
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+async function parseTissueCsv(csvPath: string): Promise<TissueAnalyzeRow[]> {
+  try {
+    const content = await readFile(csvPath, "utf8");
+    const lines = content.trim().split("\n");
+    if (lines.length < 2) return [];
+    const rows: TissueAnalyzeRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length >= 6) {
+        rows.push({
+          t: Number.parseInt(parts[0], 10),
+          crop: parts[1].trim(),
+          cell: Number.parseInt(parts[2], 10),
+          total_fluorescence: Number.parseFloat(parts[3]),
+          cell_area: Number.parseInt(parts[4], 10),
+          background: Number.parseInt(parts[5], 10),
         });
       }
     }
@@ -1160,6 +1218,28 @@ function registerWorkspaceStateIpc(): void {
     },
   );
 
+  ipcMain.handle("tasks:pick-tissue-model", async (): Promise<{ path: string } | null> => {
+    const result = await dialog.showOpenDialog({
+      title: "Select tissue model directory (Cellpose: model.onnx | CellSAM: image_encoder.onnx, etc.)",
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return { path: result.filePaths[0] };
+  });
+
+  ipcMain.handle(
+    "tasks:pick-tissue-output",
+    async (_event, suggestedPath?: string): Promise<{ path: string } | null> => {
+      const result = await dialog.showSaveDialog({
+        title: "Save tissue CSV",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+        defaultPath: suggestedPath ?? "tissue.csv",
+      });
+      if (result.canceled || !result.filePath) return null;
+      return { path: result.filePath };
+    },
+  );
+
   ipcMain.handle("tasks:pick-movie-output", async (): Promise<{ path: string } | null> => {
     const result = await dialog.showSaveDialog({
       title: "Save movie as",
@@ -1274,6 +1354,41 @@ function registerWorkspaceStateIpc(): void {
     ): Promise<{ ok: true; rows: KillPredictRow[] } | { ok: false; error: string }> => {
       try {
         const rows = await parseKillCsv(csvPath);
+        return { ok: true, rows };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  const TISSUE_CSV_RE = /^Pos(\d+)_tissue\.csv$/i;
+  ipcMain.handle(
+    "application:list-tissue-csv",
+    async (_event, workspacePath: string): Promise<Array<{ posId: string; path: string }>> => {
+      try {
+        const entries = await readdir(workspacePath, { withFileTypes: true });
+        const out: Array<{ posId: string; path: string }> = [];
+        for (const e of entries) {
+          if (!e.isFile()) continue;
+          const m = e.name.match(TISSUE_CSV_RE);
+          if (m) out.push({ posId: m[1], path: path.join(workspacePath, e.name) });
+        }
+        out.sort((a, b) => a.posId.localeCompare(b.posId, undefined, { numeric: true }));
+        return out;
+      } catch {
+        return [];
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "application:load-tissue-csv",
+    async (
+      _event,
+      csvPath: string,
+    ): Promise<{ ok: true; rows: TissueAnalyzeRow[] } | { ok: false; error: string }> => {
+      try {
+        const rows = await parseTissueCsv(csvPath);
         return { ok: true, rows };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1445,6 +1560,65 @@ function registerWorkspaceStateIpc(): void {
         return { ok: false, error: result.error };
       }
       const rows = await parseKillCsv(payload.output);
+      await updateTask(payload.taskId, {
+        status: "succeeded",
+        finished_at: new Date().toISOString(),
+        error: null,
+        result: { output: payload.output, rows },
+        progress_events: progressEvents,
+      });
+      return { ok: true, output: payload.output, rows };
+    },
+  );
+
+  ipcMain.handle(
+    "tasks:run-tissue-analyze",
+    async (
+      event: Electron.IpcMainInvokeEvent,
+      payload: RunTissueAnalyzeRequest,
+    ): Promise<RunTissueAnalyzeResponse> => {
+      const progressEvents: Array<{ progress: number; message: string; timestamp: string }> = [];
+      const sendProgress = (progress: number, message: string) => {
+        progressEvents.push({
+          progress,
+          message,
+          timestamp: new Date().toISOString(),
+        });
+        event.sender.send("tasks:tissue-analyze-progress", {
+          taskId: payload.taskId,
+          progress,
+          message,
+        });
+        updateTask(payload.taskId, { progress_events: progressEvents }).catch(() => {});
+      };
+      const args = [
+        "tissue",
+        "--input",
+        path.join(payload.workspacePath, "crops.zarr"),
+        "--pos",
+        String(payload.pos),
+        "--channel-phase",
+        String(payload.channelPhase),
+        "--channel-fluorescence",
+        String(payload.channelFluorescence),
+        "--method",
+        payload.method,
+        "--model",
+        payload.model,
+        "--output",
+        payload.output,
+      ];
+      const result = await runMupatternSubprocess(args, sendProgress);
+      if (!result.ok) {
+        await updateTask(payload.taskId, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error: result.error,
+          progress_events: progressEvents,
+        });
+        return { ok: false, error: result.error };
+      }
+      const rows = await parseTissueCsv(payload.output);
       await updateTask(payload.taskId, {
         status: "succeeded",
         finished_at: new Date().toISOString(),

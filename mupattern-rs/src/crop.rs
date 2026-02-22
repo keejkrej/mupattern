@@ -129,45 +129,43 @@ fn median_outside_mask_u16(
     width: u32,
     height: u32,
     mask: &[bool],
-) -> f64 {
+) -> u16 {
     let mut values = Vec::new();
     let n = (width * height) as usize;
     for i in 0..n {
         if mask[i] {
             continue;
         }
-        values.push(frame[i] as f64);
+        values.push(frame[i]);
     }
-    if values.is_empty() {
-        return 0.0;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        values[mid]
-    } else {
-        (values[mid - 1] + values[mid]) / 2.0
-    }
+    median_u16_in_place(&mut values)
 }
 
-fn median_outside_mask_u8(frame: &[u8], width: u32, height: u32, mask: &[bool]) -> f64 {
+fn median_outside_mask_u8(frame: &[u8], width: u32, height: u32, mask: &[bool]) -> u16 {
     let mut values = Vec::new();
     let n = (width * height) as usize;
     for i in 0..n {
         if mask[i] {
             continue;
         }
-        values.push(frame[i] as f64);
+        values.push(frame[i] as u16);
     }
+    median_u16_in_place(&mut values)
+}
+
+/// O(n) average median via select_nth_unstable. Mutates slice.
+fn median_u16_in_place(values: &mut [u16]) -> u16 {
     if values.is_empty() {
-        return 0.0;
+        return 0;
     }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let mid = values.len() / 2;
     if values.len() % 2 == 1 {
-        values[mid] as f64
+        values.select_nth_unstable(mid);
+        values[mid]
     } else {
-        (values[mid - 1] + values[mid]) as f64 / 2.0
+        values.select_nth_unstable(mid);
+        let left_max = values[..mid].iter().max().copied().unwrap();
+        ((left_max as u32 + values[mid] as u32) / 2) as u16
     }
 }
 
@@ -245,7 +243,7 @@ pub fn run(
             })
             .as_object()
             .cloned();
-            Some(zarr::create_array_f64(&store, &bg_path, shape, chunks, attrs)?)
+            Some(zarr::create_array_u16(&store, &bg_path, shape, chunks, attrs)?)
         } else {
             None
         };
@@ -280,9 +278,9 @@ pub fn run(
                     zarr::store_chunk_u16(arr, &chunk_indices, &crop_data)?;
                 }
                 if let Some(ref bg) = bg_array {
-                    let med = median_outside_mask_u16(frame, width, height, &mask);
+                    let val = median_outside_mask_u16(frame, width, height, &mask);
                     let chunk_indices = [t as u64, c as u64, z as u64];
-                    zarr::store_chunk_f64(bg, &chunk_indices, med)?;
+                    zarr::store_chunk_u16(bg, &chunk_indices, &[val])?;
                 }
             }
             FrameData::U8(frame) => {
@@ -293,9 +291,9 @@ pub fn run(
                     zarr::store_chunk_u16(arr, &chunk_indices, &crop_data)?;
                 }
                 if let Some(ref bg) = bg_array {
-                    let med = median_outside_mask_u8(frame, width, height, &mask);
+                    let val = median_outside_mask_u8(frame, width, height, &mask);
                     let chunk_indices = [t as u64, c as u64, z as u64];
-                    zarr::store_chunk_f64(bg, &chunk_indices, med)?;
+                    zarr::store_chunk_u16(bg, &chunk_indices, &[val])?;
                 }
             }
         }

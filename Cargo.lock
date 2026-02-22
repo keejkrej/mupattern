@@ -335,6 +335,17 @@ dependencies = [
 [[package]]
 name = "cellpose-rs"
 version = "0.1.0"
+source = "git+https://github.com/keejkrej/cellpose-rs#cb768a435dc4bd52ada8baeaa12b8ab6863f7fcd"
+dependencies = [
+ "image",
+ "ndarray",
+ "ort",
+]
+
+[[package]]
+name = "cellsam-rs"
+version = "0.1.0"
+source = "git+https://github.com/keejkrej/cellsam-rs#7a40f873ef284f4f788ef0329c8b418ecc1cf4da"
 dependencies = [
  "image",
  "ndarray",
@@ -1178,6 +1189,7 @@ name = "mupattern-rs"
 version = "0.1.0"
 dependencies = [
  "cellpose-rs",
+ "cellsam-rs",
  "clap",
  "image",
  "nd2-rs",

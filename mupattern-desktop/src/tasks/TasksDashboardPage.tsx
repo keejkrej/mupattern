@@ -9,6 +9,7 @@ import { ConvertTaskConfigModal } from "@/tasks/components/ConvertTaskConfigModa
 import { MovieTaskConfigModal } from "@/tasks/components/MovieTaskConfigModal";
 import { ExpressionTaskConfigModal } from "@/tasks/components/ExpressionTaskConfigModal";
 import { KillTaskConfigModal } from "@/tasks/components/KillTaskConfigModal";
+import { TissueTaskConfigModal } from "@/tasks/components/TissueTaskConfigModal";
 
 interface TaskRecord {
   id: string;
@@ -23,7 +24,15 @@ interface TaskRecord {
         output?: string;
         rows?:
           | Array<{ t: number; crop: string; intensity: number; area: number; background: number }>
-          | Array<{ t: number; crop: string; label: boolean }>;
+          | Array<{ t: number; crop: string; label: boolean }>
+          | Array<{
+              t: number;
+              crop: string;
+              cell: number;
+              total_fluorescence: number;
+              cell_area: number;
+              background: number;
+            }>;
       }
     | Record<string, unknown>
     | null;
@@ -44,6 +53,7 @@ export default function TasksDashboardPage() {
   const [movieModalOpen, setMovieModalOpen] = useState(false);
   const [expressionModalOpen, setExpressionModalOpen] = useState(false);
   const [killModalOpen, setKillModalOpen] = useState(false);
+  const [tissueModalOpen, setTissueModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const progressUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -228,6 +238,99 @@ export default function TasksDashboardPage() {
 
       try {
         const result = await window.mupatternDesktop.tasks.runExpressionAnalyze({
+          taskId,
+          ...params,
+        });
+        progressUnsubscribeRef.current?.();
+        progressUnsubscribeRef.current = null;
+        setTasks((prev) =>
+          prev.map((t) => {
+            if (t.id !== taskId) return t;
+            return {
+              ...t,
+              status: result.ok ? "succeeded" : "failed",
+              finished_at: new Date().toISOString(),
+              error: result.ok ? null : result.error,
+              result: result.ok ? { output: result.output, rows: result.rows } : null,
+            };
+          }),
+        );
+      } catch (e) {
+        progressUnsubscribeRef.current?.();
+        progressUnsubscribeRef.current = null;
+        setError(e instanceof Error ? e.message : String(e));
+        setTasks((prev) =>
+          prev.map((t) => {
+            if (t.id !== taskId) return t;
+            return {
+              ...t,
+              status: "failed",
+              finished_at: new Date().toISOString(),
+              error: e instanceof Error ? e.message : String(e),
+            };
+          }),
+        );
+      }
+    },
+    [activeWorkspace],
+  );
+
+  const handleCreateTissueAnalyze = useCallback(
+    async (params: {
+      workspacePath: string;
+      pos: number;
+      channelPhase: number;
+      channelFluorescence: number;
+      method: string;
+      model: string;
+      output: string;
+    }) => {
+      if (!activeWorkspace?.rootPath) return;
+      setError(null);
+      const taskId = crypto.randomUUID();
+      const task: TaskRecord = {
+        id: taskId,
+        kind: "tissue.analyze",
+        status: "running",
+        created_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        finished_at: null,
+        request: params,
+        result: null,
+        error: null,
+        logs: [],
+        progress_events: [],
+      };
+      await window.mupatternDesktop.tasks.insertTask(task as unknown);
+      setTasks((prev) => [task, ...prev]);
+      setSelectedTaskId(taskId);
+      setTissueModalOpen(false);
+      setAddMenuOpen(false);
+
+      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onTissueAnalyzeProgress(
+        (ev) => {
+          if (ev.taskId !== taskId) return;
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                progress_events: [
+                  ...t.progress_events,
+                  {
+                    progress: ev.progress,
+                    message: ev.message,
+                    timestamp: new Date().toISOString(),
+                  },
+                ],
+              };
+            }),
+          );
+        },
+      );
+
+      try {
+        const result = await window.mupatternDesktop.tasks.runTissueAnalyze({
           taskId,
           ...params,
         });
@@ -528,7 +631,7 @@ export default function TasksDashboardPage() {
     <div className="flex flex-col h-screen">
       <AppHeader
         title="Tasks"
-        subtitle="Run convert, crop, expression, kill, and movie tasks"
+        subtitle="Run convert, crop, expression, kill, tissue, and movie tasks"
         backTo="/workspace"
       />
 
@@ -615,6 +718,18 @@ export default function TasksDashboardPage() {
                 >
                   Kill
                 </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!activeWorkspace}
+                  onClick={() => {
+                    if (!activeWorkspace) return;
+                    setTissueModalOpen(true);
+                    setAddMenuOpen(false);
+                  }}
+                >
+                  Tissue
+                </button>
               </div>
             )}
             </div>
@@ -661,7 +776,9 @@ export default function TasksDashboardPage() {
                               ? `pos ${String(task.request?.pos ?? "?")} ch${String(task.request?.channel ?? "?")} → ${String(task.request?.output ?? "?")}`
                               : task.kind === "kill.predict"
                                 ? `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`
-                                : `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`}
+                                : task.kind === "tissue.analyze"
+                                  ? `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`
+                                  : `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -719,6 +836,28 @@ export default function TasksDashboardPage() {
                                   } | null;
                                   navigate("/application", {
                                     state: { killRows: r?.rows ?? null },
+                                  });
+                                }}
+                              >
+                                View in Application
+                              </Button>
+                            ) : task.kind === "tissue.analyze" ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const r = task.result as {
+                                    rows?: Array<{
+                                      t: number;
+                                      crop: string;
+                                      cell: number;
+                                      total_fluorescence: number;
+                                      cell_area: number;
+                                      background: number;
+                                    }>;
+                                  } | null;
+                                  navigate("/application", {
+                                    state: { tissueRows: r?.rows ?? null },
                                   });
                                 }}
                               >
@@ -802,6 +941,13 @@ export default function TasksDashboardPage() {
             onClose={() => setKillModalOpen(false)}
             workspace={activeWorkspace}
             onCreate={handleCreateKillPredict}
+          />
+          <TissueTaskConfigModal
+            key={`tissue-${activeWorkspace.id}`}
+            open={tissueModalOpen}
+            onClose={() => setTissueModalOpen(false)}
+            workspace={activeWorkspace}
+            onCreate={handleCreateTissueAnalyze}
           />
         </>
       )}

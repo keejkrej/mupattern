@@ -34,14 +34,6 @@ pub fn read_chunk_u16(
     Ok(data)
 }
 
-pub fn read_chunk_f64(
-    array: &Array<impl zarrs::storage::ReadableStorageTraits + ?Sized + 'static>,
-    chunk_indices: &[u64],
-) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
-    let data = array.retrieve_chunk::<Vec<f64>>(chunk_indices)?;
-    Ok(data)
-}
-
 /// Ensure v3 group hierarchy exists. Creates root, pos, pos/{pos_id}, pos/{pos_id}/crop.
 pub(crate) fn ensure_pos_crop_groups(
     store: &Store,
@@ -82,23 +74,6 @@ pub fn create_array_u16(
     Ok(array)
 }
 
-pub fn create_array_f64(
-    store: &Store,
-    path: &str,
-    shape: Vec<u64>,
-    chunks: Vec<u64>,
-    attrs: Option<serde_json::Map<String, serde_json::Value>>,
-) -> Result<Array<dyn ReadableWritableListableStorageTraits>, Box<dyn std::error::Error>> {
-    let store_trait: Arc<dyn ReadableWritableListableStorageTraits> = store.clone();
-    let mut builder = ArrayBuilder::new(shape.clone(), chunks.clone(), data_type::float64(), 0.0f64);
-    if let Some(a) = attrs {
-        builder.attributes(a);
-    }
-    let array = builder.build(store_trait, path)?;
-    array.store_metadata()?;
-    Ok(array)
-}
-
 pub fn store_chunk_u16(
     array: &Array<impl zarrs::storage::WritableStorageTraits + ?Sized + 'static>,
     chunk_indices: &[u64],
@@ -107,13 +82,3 @@ pub fn store_chunk_u16(
     array.store_chunk(chunk_indices, data)?;
     Ok(())
 }
-
-pub fn store_chunk_f64(
-    array: &Array<impl zarrs::storage::WritableStorageTraits + ?Sized + 'static>,
-    chunk_indices: &[u64],
-    value: f64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    array.store_chunk(chunk_indices, &[value])?;
-    Ok(())
-}
-

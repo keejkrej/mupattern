@@ -156,6 +156,8 @@ declare global {
       tasks: {
         pickCropsDestination: () => Promise<{ path: string } | null>;
         pickExpressionOutput: (suggestedPath?: string) => Promise<{ path: string } | null>;
+        pickTissueModel: () => Promise<{ path: string } | null>;
+        pickTissueOutput: (suggestedPath?: string) => Promise<{ path: string } | null>;
         pickKillModel: () => Promise<{ path: string } | null>;
         pickMovieOutput: () => Promise<{ path: string } | null>;
         pickSpotsFile: () => Promise<{ path: string } | null>;
@@ -204,6 +206,33 @@ declare global {
           | { ok: false; error: string }
         >;
         onExpressionAnalyzeProgress: (
+          callback: (ev: { taskId: string; progress: number; message: string }) => void,
+        ) => () => void;
+        runTissueAnalyze: (payload: {
+          taskId: string;
+          workspacePath: string;
+          pos: number;
+          channelPhase: number;
+          channelFluorescence: number;
+          method: string;
+          model: string;
+          output: string;
+        }) => Promise<
+          | {
+              ok: true;
+              output: string;
+              rows: Array<{
+                t: number;
+                crop: string;
+                cell: number;
+                total_fluorescence: number;
+                cell_area: number;
+                background: number;
+              }>;
+            }
+          | { ok: false; error: string }
+        >;
+        onTissueAnalyzeProgress: (
           callback: (ev: { taskId: string; progress: number; message: string }) => void,
         ) => () => void;
         runKillPredict: (payload: {
@@ -262,6 +291,23 @@ declare global {
         >;
         loadKillCsv: (path: string) => Promise<
           | { ok: true; rows: Array<{ t: number; crop: string; label: boolean }> }
+          | { ok: false; error: string }
+        >;
+        listTissueCsv: (workspacePath: string) => Promise<
+          Array<{ posId: string; path: string }>
+        >;
+        loadTissueCsv: (path: string) => Promise<
+          | {
+              ok: true;
+              rows: Array<{
+                t: number;
+                crop: string;
+                cell: number;
+                total_fluorescence: number;
+                cell_area: number;
+                background: number;
+              }>;
+            }
           | { ok: false; error: string }
         >;
       };
