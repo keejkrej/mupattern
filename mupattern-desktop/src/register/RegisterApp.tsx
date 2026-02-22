@@ -158,7 +158,6 @@ export default function RegisterApp() {
     <div className="flex h-screen flex-col">
       <AppHeader
         title="Register"
-        subtitle="Microscopy pattern-to-image registration"
         backTo="/workspace"
       />
       {workspaceImageError && (

@@ -137,7 +137,7 @@ export default function ApplicationApp() {
 
   return (
     <div className="flex flex-col h-screen">
-      <AppHeader title="Application" subtitle="Expression, kill, and tissue analysis" backTo="/workspace" />
+      <AppHeader title="Application" backTo="/workspace" />
 
       {!activeWorkspace ? (
         <div className="flex-1 flex items-center justify-center p-6">

@@ -28,9 +28,6 @@ export function PositionPickerScreen({
         <h1 className="text-4xl tracking-tight" style={{ fontFamily: '"Bitcount", monospace' }}>
           See
         </h1>
-        <p className="text-muted-foreground mt-1 text-center max-w-md">
-          Select which positions to load into the viewer.
-        </p>
       </div>
 
       <PositionPicker positions={positions} loading={loading} onConfirm={onConfirm} />

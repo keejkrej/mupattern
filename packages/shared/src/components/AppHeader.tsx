@@ -5,7 +5,7 @@ import { Home } from "lucide-react";
 
 interface AppHeaderProps {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   backTo?: string;
   backLabel?: string;
   onBackClick?: () => void;
@@ -44,7 +44,7 @@ export function AppHeader({
           <h1 className="text-4xl tracking-tight" style={{ fontFamily: '"Bitcount", monospace' }}>
             {title}
           </h1>
-          <p className="text-base text-muted-foreground">{subtitle}</p>
+          {subtitle && <p className="text-base text-muted-foreground">{subtitle}</p>}
         </div>
       </div>
       <div className="flex items-center gap-6">

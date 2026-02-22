@@ -132,9 +132,8 @@ export default function RegisterApp() {
     <div className="flex h-screen flex-col">
       <AppHeader
         title="Register"
-        subtitle="Microscopy pattern-to-image registration"
-        backTo="/"
-        backLabel="Home"
+        backTo="/tools"
+        backLabel="Tools"
       />
       <div className="flex flex-1 min-h-0">
         <LeftSidebar

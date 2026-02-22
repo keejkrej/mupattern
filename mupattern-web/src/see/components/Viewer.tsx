@@ -328,7 +328,7 @@ export function Viewer({ store, index }: ViewerProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      <AppHeader title="See" subtitle="Micropattern crop viewer" backTo="/" backLabel="Home" />
+      <AppHeader title="See" backTo="/tools" backLabel="Tools" />
 
       {/* Main area: left sidebar | center column | right sidebar */}
       <div className="flex flex-1 overflow-hidden">

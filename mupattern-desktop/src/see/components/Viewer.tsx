@@ -415,7 +415,7 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      <AppHeader title="See" subtitle="Micropattern crop viewer" backTo="/workspace" />
+      <AppHeader title="See" backTo="/workspace" />
       {frameLoadError && (
         <div className="px-4 py-2 text-xs text-destructive border-b border-border">
           {frameLoadError}

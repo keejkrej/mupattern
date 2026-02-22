@@ -631,7 +631,6 @@ export default function TasksDashboardPage() {
     <div className="flex flex-col h-screen">
       <AppHeader
         title="Tasks"
-        subtitle="Run convert, crop, expression, kill, tissue, and movie tasks"
         backTo="/workspace"
       />
 
