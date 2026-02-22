@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 cellpose-rs = { git = "https://github.com/keejkrej/cellpose-rs" }
+spotiflow-rs = { git = "https://github.com/keejkrej/spotiflow-rs" }
 cellsam-rs = { git = "https://github.com/keejkrej/cellsam-rs" }
 clap = { version = "4", features = ["derive"] }
 nd2-rs = "0.1.2"

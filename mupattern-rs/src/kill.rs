@@ -175,6 +175,7 @@ pub fn run(
     }
 
     let mut session = {
+        #[allow(unused_mut)]
         let mut builder = Session::builder()?;
         #[cfg(any(windows, target_os = "linux"))]
         if !args.cpu {
