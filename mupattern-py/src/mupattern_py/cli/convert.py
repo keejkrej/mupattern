@@ -45,6 +45,10 @@ def convert(
         Path,
         typer.Option(help="Output directory (will contain Pos*/... TIFF folders)."),
     ],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt."),
+    ] = False,
 ) -> None:
     """Convert an ND2 file into per-position TIFF folders."""
     import nd2
@@ -81,7 +85,7 @@ def convert(
     typer.echo(f"  {time_indices}")
     typer.echo("")
 
-    if not typer.confirm("Proceed with conversion?"):
+    if not yes and not typer.confirm("Proceed with conversion?"):
         raise typer.Abort()
 
     try:

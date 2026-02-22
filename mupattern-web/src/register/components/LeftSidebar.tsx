@@ -18,11 +18,12 @@ export function LeftSidebar({
   onSave,
 }: LeftSidebarProps) {
   return (
-    <aside className="w-64 flex-shrink-0 overflow-y-auto border-r border-border p-4 space-y-2">
-      <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-        Actions
-      </h2>
-      <div className="space-y-2">
+    <aside className="w-64 flex-shrink-0 overflow-y-auto border-r border-border p-4 space-y-4">
+      <div>
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground mb-2">
+          Actions
+        </h2>
+        <div className="space-y-2">
         <Button
           variant="secondary"
           size="sm"
@@ -57,6 +58,7 @@ export function LeftSidebar({
           <Button variant="secondary" size="sm" className="flex-1 h-7 text-base" onClick={onSave}>
             Save
           </Button>
+        </div>
         </div>
       </div>
     </aside>

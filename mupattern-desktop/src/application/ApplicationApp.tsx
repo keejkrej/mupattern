@@ -7,6 +7,15 @@ import { workspaceStore } from "@/workspace/store";
 import { ExpressionTab } from "./expression/ExpressionTab";
 import { ExpressionLeftSidebar } from "./expression/ExpressionLeftSidebar";
 import { KillTab } from "./kill/KillTab";
+import { KillLeftSidebar } from "./kill/KillLeftSidebar";
+
+const APPLICATION_TAB_KEY = "mupattern-application-tab";
+
+function getStoredTab(): "expression" | "kill" {
+  if (typeof window === "undefined") return "expression";
+  const stored = sessionStorage.getItem(APPLICATION_TAB_KEY);
+  return stored === "kill" ? "kill" : "expression";
+}
 
 export default function ApplicationApp() {
   const location = useLocation();
@@ -21,7 +30,7 @@ export default function ApplicationApp() {
     killRows?: Array<{ t: number; crop: string; label: boolean }>;
   } | null;
   const expressionRowsFromNav = locationState?.expressionRows ?? null;
-  const killRows = locationState?.killRows ?? null;
+  const killRowsFromNav = locationState?.killRows ?? null;
   const workspaces = useStore(workspaceStore, (s) => s.workspaces);
   const activeId = useStore(workspaceStore, (s) => s.activeId);
   const activeWorkspace = activeId ? (workspaces.find((w) => w.id === activeId) ?? null) : null;
@@ -35,11 +44,35 @@ export default function ApplicationApp() {
   }> | null>(expressionRowsFromNav);
   const [selectedExpressionPath, setSelectedExpressionPath] = useState<string | null>(null);
 
+  const [killRows, setKillRows] = useState<Array<{ t: number; crop: string; label: boolean }> | null>(
+    killRowsFromNav ?? null,
+  );
+  const [selectedKillPath, setSelectedKillPath] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"expression" | "kill">(getStoredTab);
+
+  useEffect(() => {
+    sessionStorage.setItem(APPLICATION_TAB_KEY, activeTab);
+  }, [activeTab]);
+
   useEffect(() => {
     if (expressionRowsFromNav) {
       setExpressionRows(expressionRowsFromNav);
     }
   }, [expressionRowsFromNav]);
+
+  useEffect(() => {
+    if (killRowsFromNav && killRowsFromNav.length > 0) {
+      setKillRows(killRowsFromNav);
+    }
+  }, [killRowsFromNav]);
+
+  const handleKillSelect = useCallback(
+    (path: string, rows: Array<{ t: number; crop: string; label: boolean }>) => {
+      setSelectedKillPath(path);
+      setKillRows(rows);
+    },
+    [],
+  );
 
   const handleExpressionSelect = useCallback(
     (
@@ -64,7 +97,11 @@ export default function ApplicationApp() {
         </div>
       ) : (
         <div className="flex flex-1 min-h-0">
-          <Tabs.Root defaultValue="expression" className="flex flex-1 min-h-0 flex-col">
+          <Tabs.Root
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as "expression" | "kill")}
+            className="flex flex-1 min-h-0 flex-col"
+          >
             <div className="flex border-b border-border px-4">
               <Tabs.List className="flex gap-2">
                 <Tabs.Trigger
@@ -97,9 +134,16 @@ export default function ApplicationApp() {
               </Tabs.Content>
               <Tabs.Content
                 value="kill"
-                className="flex-1 overflow-auto p-6 mt-0 data-[state=inactive]:hidden"
+                className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden flex"
               >
-                <KillTab workspace={activeWorkspace} initialRows={killRows} />
+                <KillLeftSidebar
+                  workspace={activeWorkspace}
+                  selectedPath={selectedKillPath}
+                  onSelect={handleKillSelect}
+                />
+                <div className="flex-1 overflow-auto p-6">
+                  <KillTab workspace={activeWorkspace} initialRows={killRows} />
+                </div>
               </Tabs.Content>
             </div>
           </Tabs.Root>

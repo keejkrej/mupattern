@@ -121,7 +121,7 @@ export function KillTaskConfigModal({
                     className="flex-1 border rounded px-3 py-2 bg-background text-sm"
                     value={modelPath}
                     onChange={(e) => setModelPath(e.target.value)}
-                    placeholder="onnx_models/mupattern-resnet18"
+                    placeholder="models/mupattern-resnet18"
                   />
                   <Button variant="outline" size="sm" onClick={handleBrowseModel}>
                     Browse

@@ -11,7 +11,7 @@ import { CalibrationControls } from "@/register/components/CalibrationControls";
 import { PatternEditor } from "@/register/components/PatternEditor";
 import { TransformEditor } from "@/register/components/TransformEditor";
 import { Slider, Label } from "@mupattern/shared";
-import { parseYAMLConfig } from "@mupattern/shared/register/lib/units";
+import { parseYAMLConfig, patternToYAML } from "@mupattern/shared/register/lib/units";
 import type {
   Calibration,
   Lattice,
@@ -21,7 +21,6 @@ import type {
 
 interface SidebarProps {
   onConfigLoad: (config: PatternConfigUm) => void;
-  onConfigSave?: () => void;
   onCalibrationLoad: (cal: Calibration) => void;
   calibration: Calibration;
   onCalibrationChange: (cal: Calibration) => void;
@@ -59,7 +58,6 @@ function Section({
 
 export function Sidebar({
   onConfigLoad,
-  onConfigSave,
   onCalibrationLoad,
   calibration,
   onCalibrationChange,
@@ -92,6 +90,37 @@ export function Sidebar({
     [onConfigLoad, onCalibrationLoad],
   );
 
+  const handleSaveConfig = useCallback(async () => {
+    const yaml = patternToYAML(pattern, calibration);
+    try {
+      if ("showSaveFilePicker" in window) {
+        const handle = await (
+          window as Window & {
+            showSaveFilePicker: (opts: {
+              suggestedName?: string;
+              types?: Array<{ description?: string; accept: Record<string, string[]> }>;
+            }) => Promise<FileSystemFileHandle>;
+          }
+        ).showSaveFilePicker({
+          suggestedName: "registration_config.yaml",
+          types: [{ description: "YAML config", accept: { "text/yaml": [".yaml"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(yaml);
+        await writable.close();
+        return;
+      }
+    } catch {
+      return;
+    }
+    const blob = new Blob([yaml], { type: "text/yaml" });
+    const link = document.createElement("a");
+    link.download = "registration_config.yaml";
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }, [pattern, calibration]);
+
   return (
     <aside className="w-80 flex-shrink-0 overflow-y-auto border-l border-border p-4 space-y-1">
       <Section title="Config">
@@ -115,23 +144,23 @@ export function Sidebar({
           >
             Load config
           </Button>
-          {onConfigSave && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full h-7 text-base"
-              onClick={onConfigSave}
-            >
-              Save config
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full h-7 text-base"
+            onClick={() => void handleSaveConfig()}
+          >
+            Save config
+          </Button>
         </div>
       </Section>
 
       <Separator />
 
       <Section title="Calibration">
-        <CalibrationControls calibration={calibration} onChange={onCalibrationChange} />
+        <div className="space-y-3">
+          <CalibrationControls calibration={calibration} onChange={onCalibrationChange} />
+        </div>
       </Section>
 
       <Separator />
@@ -154,6 +183,7 @@ export function Sidebar({
         </div>
         <PatternEditor
           pattern={pattern}
+          latticeMinUm={10}
           onLatticeUpdate={onLatticeUpdate}
           onWidthUpdate={onWidthUpdate}
           onHeightUpdate={onHeightUpdate}

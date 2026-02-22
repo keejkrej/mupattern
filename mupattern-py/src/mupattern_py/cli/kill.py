@@ -15,9 +15,9 @@ def _progress_echo(progress: float, message: str) -> None:
 
 
 def kill(
-    zarr_path: Annotated[
+    input: Annotated[
         Path,
-        typer.Option("--zarr", help="Path to zarr store."),
+        typer.Option("--input", help="Path to zarr store (e.g. crops.zarr)."),
     ],
     pos: Annotated[
         int,
@@ -35,8 +35,8 @@ def kill(
     ],
     batch_size: Annotated[
         int,
-        typer.Option(help="Inference batch size."),
-    ],
+        typer.Option("--batch-size", help="Inference batch size."),
+    ] = 256,
     t_start: Annotated[
         int | None,
         typer.Option("--t-start", help="Start timepoint (inclusive)."),
@@ -75,7 +75,7 @@ def kill(
         typer.echo(f"Predicting pos {pos} ({n_crops_desc}, {n_t_desc})")
 
         run_predict(
-            zarr_path,
+            input,
             pos,
             model,
             output,

@@ -12,13 +12,13 @@ from ..apps.crop.core import run_movie
 
 
 def movie(
-    input_zarr: Annotated[
+    input: Annotated[
         Path,
         typer.Option(
-            "--input-zarr",
+            "--input",
             exists=True,
             file_okay=False,
-            help="Path to zarr store.",
+            help="Path to zarr store (e.g. crops.zarr).",
         ),
     ],
     pos: Annotated[int, typer.Option(help="Position number.")],
@@ -44,7 +44,7 @@ def movie(
     """Create a movie from a zarr crop."""
     try:
         run_movie(
-            input_zarr, pos, crop, channel, time, output, fps, colormap, spots,
+            input, pos, crop, channel, time, output, fps, colormap, spots,
             on_progress=progress_json_stderr,
         )
     except ValueError as e:

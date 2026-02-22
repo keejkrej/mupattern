@@ -11,7 +11,10 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 nd2-rs = "0.1.2"
+ndarray = "0.17"
+ort = { version = "2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-native", "copy-dylibs", "cuda"] }
 tiff = "0.11"
+image = "0.25"
 zarrs = { version = "0.23", default-features = false, features = ["filesystem", "blosc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

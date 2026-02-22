@@ -8,6 +8,9 @@ interface LeftSidebarProps {
   numChannels: number;
   channel: number;
   onChannelChange: (ch: number) => void;
+  maxZ: number;
+  z: number;
+  onZChange: (z: number) => void;
 }
 
 export function LeftSidebar({
@@ -17,6 +20,9 @@ export function LeftSidebar({
   numChannels,
   channel,
   onChannelChange,
+  maxZ,
+  z,
+  onZChange,
 }: LeftSidebarProps) {
   const handleChannelStep = (delta: -1 | 1) => {
     const next = Math.max(0, Math.min(numChannels - 1, channel + delta));
@@ -33,13 +39,20 @@ export function LeftSidebar({
     }
   };
 
+  const handleZStep = (delta: -1 | 1) => {
+    const next = Math.max(0, Math.min(maxZ, z + delta));
+    if (next !== z) onZChange(next);
+  };
+
   return (
     <aside className="w-64 flex-shrink-0 overflow-y-auto border-r border-border p-4 space-y-4">
       <div>
         <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
           Viewer Slice
         </h2>
-        <p className="text-xs text-muted-foreground mt-1">Choose position and channel.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Choose position, channel, and z. Time is controlled by playback.
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -107,6 +120,41 @@ export function LeftSidebar({
               onClick={() => handleChannelStep(1)}
               disabled={channel >= numChannels - 1}
               title="Next channel"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Z</label>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => handleZStep(-1)}
+              disabled={z <= 0}
+              title="Previous z"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <select
+              className="flex-1 border rounded px-2 py-1 bg-background text-sm"
+              value={z}
+              onChange={(e) => onZChange(Number(e.target.value))}
+            >
+              {Array.from({ length: maxZ + 1 }, (_, i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => handleZStep(1)}
+              disabled={z >= maxZ}
+              title="Next z"
             >
               <ChevronRight className="size-4" />
             </Button>

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
   },
   workspace: {
     pickDirectory: () => ipcRenderer.invoke("workspace:pick-directory"),
+    pathExists: (dirPath: string) =>
+      ipcRenderer.invoke("workspace:path-exists", { path: dirPath }) as Promise<boolean>,
     rescanDirectory: (path: string) =>
       ipcRenderer.invoke("workspace:rescan-directory", { path }) as Promise<{
         path: string;
@@ -164,6 +166,15 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
               background: number;
             }>;
           }
+        | { ok: false; error: string }
+      >,
+    listKillCsv: (workspacePath: string) =>
+      ipcRenderer.invoke("application:list-kill-csv", workspacePath) as Promise<
+        Array<{ posId: string; path: string }>
+      >,
+    loadKillCsv: (path: string) =>
+      ipcRenderer.invoke("application:load-kill-csv", path) as Promise<
+        | { ok: true; rows: Array<{ t: number; crop: string; label: boolean }> }
         | { ok: false; error: string }
       >,
   },

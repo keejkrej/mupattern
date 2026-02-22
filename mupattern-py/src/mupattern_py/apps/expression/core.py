@@ -51,8 +51,8 @@ def run_analyze(
         on_progress(1.0, f"Wrote {len(rows)} rows to {output}")
 
 
-def run_plot(input_csv: Path, output_dir: Path) -> None:
-    """Plot raw intensity, background-corrected total fluor, and max-normalized corrected per crop over time."""
+def run_plot(input_csv: Path, output: Path) -> None:
+    """Plot background-corrected total fluor per crop over time, with median. Matches desktop ExpressionTab."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -67,82 +67,46 @@ def run_plot(input_csv: Path, output_dir: Path) -> None:
         ax.set_ylabel(ax.get_ylabel(), fontsize=14)
         ax.set_title(ax.get_title(), fontsize=16)
 
-    output_dir = output_dir.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    raw_path = output_dir / "intensity.png"
-    sub_path = output_dir / "background_corrected_total_fluor.png"
-    norm_path = output_dir / "normalized_corrected.png"
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(input_csv, dtype={"crop": str})
     df["intensity_above_bg"] = df["intensity"] - df["area"] * df["background"]
     crops = sorted(df["crop"].unique())
     size = 6
 
-    if not crops:
-        fig, ax = plt.subplots(figsize=(size, size))
-        ax.set_ylabel("Intensity")
-        ax.set_title("Raw intensity per crop")
-        ax.set_xlabel("t")
-        _style_ax(ax)
-        plt.tight_layout()
-        plt.savefig(raw_path, dpi=150, bbox_inches="tight")
-        plt.close()
-        fig, ax = plt.subplots(figsize=(size, size))
-        ax.set_ylabel("Background-corrected total fluor")
-        ax.set_title("Background-corrected total fluor per crop")
-        ax.set_xlabel("t")
-        _style_ax(ax)
-        plt.tight_layout()
-        plt.savefig(sub_path, dpi=150, bbox_inches="tight")
-        plt.close()
-        fig, ax = plt.subplots(figsize=(size, size))
-        ax.set_ylabel("Normalized (max=1)")
-        ax.set_title("Normalized corrected total fluor per crop")
-        ax.set_xlabel("t")
-        _style_ax(ax)
-        plt.tight_layout()
-        plt.savefig(norm_path, dpi=150, bbox_inches="tight")
-        plt.close()
-        return
-
-    cmap = plt.get_cmap("tab10" if len(crops) <= 10 else "tab20")
-    colors = [cmap(i % cmap.N) for i in range(len(crops))]
+    # Gray at 30% for bulk traces (like ExpressionTab BULK_LINE_STROKE)
+    bulk_color = (0.5, 0.5, 0.5, 0.3)
 
     fig, ax = plt.subplots(figsize=(size, size))
-    for i, crop in enumerate(crops):
+    for crop in crops:
         group = df[df["crop"] == crop].sort_values("t")
-        ax.plot(group["t"], group["intensity"], color=colors[i], linestyle="-")
-    ax.set_ylabel("Intensity")
-    ax.set_title("Raw intensity per crop")
-    ax.set_xlabel("t")
-    _style_ax(ax)
-    plt.tight_layout()
-    plt.savefig(raw_path, dpi=150, bbox_inches="tight")
-    plt.close()
+        ax.plot(group["t"], group["intensity_above_bg"], color=bulk_color, linestyle="-", linewidth=1)
 
-    fig, ax = plt.subplots(figsize=(size, size))
-    for i, crop in enumerate(crops):
-        group = df[df["crop"] == crop].sort_values("t")
-        ax.plot(group["t"], group["intensity_above_bg"], color=colors[i], linestyle="-")
-    ax.set_ylabel("Background-corrected total fluor")
-    ax.set_title("Background-corrected total fluor per crop")
-    ax.set_xlabel("t")
-    _style_ax(ax)
-    plt.tight_layout()
-    plt.savefig(sub_path, dpi=150, bbox_inches="tight")
-    plt.close()
+    # Median per t (like ExpressionTab dataWithMedian)
+    by_t: dict[int, list[float]] = {}
+    for _, row in df.iterrows():
+        v = row["intensity_above_bg"]
+        if isinstance(v, (int, float)) and not (isinstance(v, float) and v != v):
+            by_t.setdefault(int(row["t"]), []).append(float(v))
+    t_sorted = sorted(by_t.keys())
+    median_vals = []
+    for t in t_sorted:
+        vals = by_t[t]
+        if vals:
+            sorted_v = sorted(vals)
+            m = len(sorted_v) // 2
+            med = sorted_v[m] if len(sorted_v) % 2 else (sorted_v[m - 1] + sorted_v[m]) / 2
+            median_vals.append(med)
+        else:
+            median_vals.append(float("nan"))
+    ax.plot(t_sorted, median_vals, color="red", linestyle="-", linewidth=2, label="median")
 
-    fig, ax = plt.subplots(figsize=(size, size))
-    for i, crop in enumerate(crops):
-        group = df[df["crop"] == crop].sort_values("t")
-        y = group["intensity_above_bg"].values
-        m = y.max()
-        normalized = y / m if m > 0 else y
-        ax.plot(group["t"], normalized, color=colors[i], linestyle="-")
-    ax.set_ylabel("Normalized (max=1)")
-    ax.set_title("Normalized corrected total fluor per crop")
+    ax.set_ylabel("fluorescence")
+    ax.set_title("Background-corrected total fluorescence")
     ax.set_xlabel("t")
+    ax.legend(loc="upper left")
     _style_ax(ax)
     plt.tight_layout()
-    plt.savefig(norm_path, dpi=150, bbox_inches="tight")
+    plt.savefig(output, dpi=150, bbox_inches="tight")
     plt.close()

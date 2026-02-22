@@ -38,7 +38,6 @@ __pycache__/
 .firebase/
 
 # Model weights (too large for git)
-data/model/
-onnx_models/*/
+models/
 .serena/
 .claude/

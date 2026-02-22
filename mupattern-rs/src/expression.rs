@@ -7,7 +7,7 @@ use crate::zarr;
 #[derive(Args, Clone)]
 pub struct ExpressionArgs {
     #[arg(long)]
-    pub workspace: String,
+    pub input: String,
     #[arg(long)]
     pub pos: u32,
     #[arg(long)]
@@ -20,8 +20,7 @@ pub fn run(
     args: ExpressionArgs,
     progress: impl Fn(f64, &str),
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = Path::new(&args.workspace);
-    let crops_zarr = workspace.join("crops.zarr");
+    let crops_zarr = Path::new(&args.input);
     let pos_id = format!("{:03}", args.pos);
     let crop_root = crops_zarr.join("pos").join(&pos_id).join("crop");
 

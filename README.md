@@ -197,7 +197,7 @@ Convert the zarr crops + annotation CSV into a HuggingFace Dataset.
 
 ```bash
 uv run mupattern dataset kill \
-  --zarr /path/to/crops.zarr \
+  --input /path/to/crops.zarr \
   --pos 150 \
   --annotations /path/to/annotations.csv \
   --output /path/to/dataset
@@ -223,6 +223,8 @@ The best checkpoint (by F1 score) is saved to `model/best/`. Training takes ~45 
 
 Our pretrained model is available on HuggingFace: [keejkrej/mupattern-resnet18](https://huggingface.co/keejkrej/mupattern-resnet18)
 
+To run kill inference in **mupattern-desktop** (without Python), download or export the model first: see [models/README.md](models/README.md) — download with `uv run huggingface-cli download keejkrej/mupattern-resnet18 --local-dir models/mupattern-resnet18` or export with `uv run optimum-cli export onnx --model keejkrej/mupattern-resnet18 models/mupattern-resnet18`.
+
 Options:
 - `--epochs` — number of training epochs (default: 20)
 - `--batch-size` — training batch size (default: 32)
@@ -236,7 +238,7 @@ Run inference on the full zarr store (or a subset).
 ```bash
 # Using the pretrained model from HuggingFace:
 uv run mupattern kill \
-  --zarr /path/to/crops.zarr \
+  --input /path/to/crops.zarr \
   --pos 150 \
   --model keejkrej/mupattern-resnet18 \
   --output /path/to/predictions.csv \
@@ -244,7 +246,7 @@ uv run mupattern kill \
 
 # With optional time/crop range:
 uv run mupattern kill \
-  --zarr /path/to/crops.zarr \
+  --input /path/to/crops.zarr \
   --pos 150 \
   --model /path/to/model/best \
   --output /path/to/predictions.csv \
@@ -278,7 +280,7 @@ For crops with multiple cells per pattern (e.g. ~10 cells, phase + fluorescence)
 ```bash
 # Segment + analyze: Cellpose on each crop/frame, then measure per-cell fluorescence
 uv run mupattern tissue \
-  --zarr /path/to/crops.zarr \
+  --input /path/to/crops.zarr \
   --pos 0 \
   --channel-phase 0 \
   --channel-fluorescence 1 \
@@ -302,7 +304,7 @@ Detect fluorescent spots per crop per timepoint using spotiflow.
 ```bash
 # Detect spots
 uv run mupattern spot \
-  --zarr /path/to/crops.zarr \
+  --input /path/to/crops.zarr \
   --pos 0 \
   --channel 1 \
   --output /path/to/spots.csv \

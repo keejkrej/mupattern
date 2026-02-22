@@ -10,6 +10,7 @@ export {
   setSeeSelectedPos as setSelectedPos,
   setSeeT as setT,
   setSeeC as setC,
+  setSeeZ as setZ,
   setSeePage as setPage,
   setSeeContrast as setContrast,
   setSeeAnnotating as setAnnotating,

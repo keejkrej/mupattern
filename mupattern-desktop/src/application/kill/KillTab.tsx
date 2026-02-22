@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   LineChart,
   Line,
+  Area,
   BarChart,
   Bar,
   XAxis,
@@ -32,7 +33,14 @@ interface KillTabProps {
   initialRows?: KillRow[] | null;
 }
 
-function applyClean(rows: KillRow[]): KillRow[] {
+const CLEAN_THRESHOLD = 0.8;
+const HIST_BIN_WIDTH = 5;
+
+/**
+ * Per-pattern: find the longest span [first frame, last true] with ≥80% true.
+ * Death time = span end (chosenEnd). If span duration = 1, set 0 (misdetection, neglected in histogram).
+ */
+function computeDeathTimes(rows: KillRow[]): Map<string, number> {
   const byCrop = new Map<string, KillRow[]>();
   for (const r of rows) {
     let arr = byCrop.get(r.crop);
@@ -42,24 +50,35 @@ function applyClean(rows: KillRow[]): KillRow[] {
     }
     arr.push(r);
   }
-  const result: KillRow[] = [];
-  for (const [, arr] of byCrop) {
+  const deathTimes = new Map<string, number>();
+  for (const [crop, arr] of byCrop) {
     arr.sort((a, b) => a.t - b.t);
-    let seenFalse = false;
-    for (const row of arr) {
-      if (!row.label) seenFalse = true;
-      else if (seenFalse) result.push({ ...row, label: false });
-      else result.push(row);
+    const tMin = arr[0]!.t;
+    const trueTs = [...new Set(arr.filter((r) => r.label).map((r) => r.t))].sort((a, b) => a - b);
+    if (trueTs.length === 0) {
+      deathTimes.set(crop, 0);
+      continue;
     }
+    let chosenEnd = -1;
+    for (let i = trueTs.length - 1; i >= 0; i--) {
+      const end = trueTs[i]!;
+      const span = arr.filter((r) => r.t >= tMin && r.t <= end);
+      const nTrue = span.filter((r) => r.label).length;
+      if (span.length > 0 && nTrue / span.length >= CLEAN_THRESHOLD) {
+        chosenEnd = end;
+        break;
+      }
+    }
+    if (chosenEnd < 0) chosenEnd = trueTs[0]!;
+    const spanDuration = chosenEnd - tMin + 1;
+    deathTimes.set(crop, spanDuration === 1 ? 0 : chosenEnd);
   }
-  result.sort((a, b) => (a.t !== b.t ? a.t - b.t : a.crop.localeCompare(b.crop)));
-  return result;
+  return deathTimes;
 }
 
 export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<KillRow[] | null>(initialRows ?? null);
-  const [cleaned, setCleaned] = useState(false);
   const [tasks, setTasks] = useState<KillTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
@@ -87,47 +106,49 @@ export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
     };
   }, []);
 
-  const displayRows = useMemo(() => {
-    if (!rows) return null;
-    return cleaned ? applyClean(rows) : rows;
-  }, [rows, cleaned]);
-
-  const { curveData, deathTimes } = useMemo((): {
+  const { curveData, deathTimes, cropCount } = useMemo((): {
     curveData: Array<{ t: number; n: number }>;
     deathTimes: number[];
+    cropCount: number;
   } => {
-    if (!displayRows || displayRows.length === 0) return { curveData: [], deathTimes: [] };
+    if (!rows || rows.length === 0) return { curveData: [], deathTimes: [], cropCount: 0 };
+    const dt = computeDeathTimes(rows);
+    const cropCount = dt.size;
+    const deaths = [...dt.values()];
+    const maxT = Math.max(
+      ...rows.map((r) => r.t),
+      ...deaths,
+      0,
+    );
     const byT = new Map<number, number>();
-    const deaths: number[] = [];
-    const byCrop = new Map<string, KillRow[]>();
-    for (const r of displayRows) {
-      let arr = byCrop.get(r.crop);
-      if (!arr) {
-        arr = [];
-        byCrop.set(r.crop, arr);
-      }
-      arr.push(r);
+    for (let t = 0; t <= maxT; t++) {
+      const nAlive = [...dt.values()].filter((d) => d > 0 && d >= t).length;
+      byT.set(t, nAlive);
     }
-    for (const [, arr] of byCrop) {
-      arr.sort((a, b) => a.t - b.t);
-      const firstFalse = arr.find((r) => !r.label);
-      if (firstFalse && firstFalse.t > 0) deaths.push(firstFalse.t);
+    let curveData = [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, n]) => ({ t, n }));
+    if (curveData.length === 1) {
+      curveData = [{ t: Math.max(0, curveData[0]!.t - 1), n: 0 }, curveData[0]!];
     }
-    for (const r of displayRows) {
-      if (!byT.has(r.t)) byT.set(r.t, 0);
-      if (r.label) byT.set(r.t, byT.get(r.t)! + 1);
-    }
-    const curveData = [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, n]) => ({ t, n }));
-    return { curveData, deathTimes };
-  }, [displayRows]);
+    return { curveData, deathTimes: deaths, cropCount };
+  }, [rows]);
 
   const histData = useMemo(() => {
-    if (deathTimes.length === 0) return [];
-    const maxT = Math.max(...deathTimes, 1);
-    const bins = new Map<number, number>();
-    for (let t = 1; t <= maxT; t++) bins.set(t, 0);
-    for (const t of deathTimes) bins.set(t, (bins.get(t) ?? 0) + 1);
-    return [...bins.entries()].map(([t, n]) => ({ t, n }));
+    const filtered = deathTimes.filter((t) => t > 0);
+    if (filtered.length === 0) return [];
+    const maxT = Math.max(...filtered, 1);
+    const binWidth = Math.max(1, HIST_BIN_WIDTH);
+    const binEdges: number[] = [];
+    for (let e = 1; e <= maxT + 1; e += binWidth) binEdges.push(e);
+    if (binEdges[binEdges.length - 1]! <= maxT) binEdges.push(maxT + 1);
+    const result: Array<{ t: number; n: number }> = [];
+    for (let i = 0; i < binEdges.length - 1; i++) {
+      const lo = binEdges[i]!;
+      const hi = binEdges[i + 1]!;
+      const tCenter = (lo + hi - 1) / 2;
+      const n = filtered.filter((d) => d >= lo && d < hi).length;
+      result.push({ t: tCenter, n });
+    }
+    return result;
   }, [deathTimes]);
 
   return (
@@ -165,38 +186,44 @@ export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
 
       {rows && rows.length > 0 && (
         <div className="space-y-8">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">
-              {rows.length} rows from kill predict
-              {cleaned && " (cleaned)"}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant={cleaned ? "outline" : "ghost"}
-                size="sm"
-                onClick={() => setCleaned((c) => !c)}
-              >
-                {cleaned ? "Show original" : "Apply clean"}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setRows(null)}>
-                Choose different task
-              </Button>
-            </div>
-          </div>
+          <span className="text-sm text-muted-foreground">{cropCount} patterns</span>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
-            <div>
-              <h3 className="text-sm font-medium mb-2">Kill curve (n cells present)</h3>
-              <div className="h-64 [&_*]:pointer-events-none">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={curveData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <div className="flex flex-col gap-6 w-full">
+            <div className="min-w-0">
+              <h3 className="text-sm font-medium mb-2">
+                Kill curve (n cells present)
+                {curveData.length > 0 && (
+                  <span className="font-normal text-muted-foreground ml-1">
+                    — {curveData.length} points
+                  </span>
+                )}
+              </h3>
+              <div className="h-[32rem] w-full min-w-0 [&_*]:pointer-events-none">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <LineChart data={curveData} margin={{ top: 5, right: 5, left: 5, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="t" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
+                    <XAxis
+                      dataKey="t"
+                      tick={{ fontSize: 12 }}
+                      label={{ value: "frame", position: "bottom", offset: -5 }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12 }}
+                      domain={[0, "auto"]}
+                      label={{ value: "n alive", angle: -90, position: "insideLeft" }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="n"
+                      fill="rgba(70, 130, 180, 0.25)"
+                      stroke="none"
+                      baseValue={0}
+                      isAnimationActive={false}
+                    />
                     <Line
                       type="monotone"
                       dataKey="n"
-                      stroke="hsl(var(--primary))"
+                      stroke="rgb(70, 130, 180)"
                       strokeWidth={2}
                       dot={false}
                       isAnimationActive={false}
@@ -205,14 +232,21 @@ export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-medium mb-2">Death time distribution</h3>
-              <div className="h-64 [&_*]:pointer-events-none">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={histData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+              <div className="h-[32rem] w-full min-w-0 [&_*]:pointer-events-none">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <BarChart data={histData} margin={{ top: 5, right: 5, left: 5, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="t" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
+                    <XAxis
+                      dataKey="t"
+                      tick={{ fontSize: 12 }}
+                      label={{ value: "frame at death", position: "bottom", offset: -5 }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12 }}
+                      label={{ value: "frequency", angle: -90, position: "insideLeft" }}
+                    />
                     <Bar dataKey="n" fill="hsl(var(--destructive))" isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>

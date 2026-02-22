@@ -5,7 +5,7 @@ import { AppHeader } from "@mupattern/shared";
 import { LeftSidebar } from "@/register/components/LeftSidebar";
 import { Sidebar } from "@/register/components/Sidebar";
 import { UnifiedCanvas, type UnifiedCanvasRef } from "@/register/components/UnifiedCanvas";
-import { patternToPixels, patternToYAML } from "@mupattern/shared/register/lib/units";
+import { patternToPixels } from "@mupattern/shared/register/lib/units";
 import {
   mupatternStore,
   setPattern,
@@ -82,16 +82,6 @@ export default function RegisterApp() {
   const normalizedPhaseContrast = useNormalizedPhaseContrast(rawImageData);
 
   const patternPx = useMemo(() => patternToPixels(pattern, calibration), [pattern, calibration]);
-
-  const handleExportYAML = useCallback(() => {
-    const yaml = patternToYAML(pattern, calibration);
-    const blob = new Blob([yaml], { type: "text/yaml" });
-    const link = document.createElement("a");
-    link.download = `${imageBaseName}_config.yaml`;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }, [pattern, calibration, imageBaseName]);
 
   const handleSaveCSV = useCallback(() => {
     canvasRef.current?.exportCSV();
@@ -170,7 +160,6 @@ export default function RegisterApp() {
         />
         <Sidebar
           onConfigLoad={setPattern}
-          onConfigSave={handleExportYAML}
           onCalibrationLoad={setCalibration}
           calibration={calibration}
           onCalibrationChange={setCalibration}

@@ -15,9 +15,9 @@ def _progress_echo(progress: float, message: str) -> None:
 
 
 def tissue(
-    zarr_path: Annotated[
+    input: Annotated[
         Path,
-        typer.Option("--zarr", help="Path to crops zarr store (e.g. crops.zarr)."),
+        typer.Option("--input", help="Path to zarr store (e.g. crops.zarr)."),
     ],
     pos: Annotated[
         int,
@@ -59,7 +59,7 @@ def tissue(
     """Run segment then analyze: write masks.zarr, then tissue CSV."""
     try:
         run_pipeline(
-            zarr_path,
+            input,
             pos,
             channel_fluorescence,
             output,

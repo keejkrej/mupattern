@@ -138,6 +138,7 @@ declare global {
       };
       workspace: {
         pickDirectory: () => Promise<WorkspacePickResult | null>;
+        pathExists: (path: string) => Promise<boolean>;
         rescanDirectory: (path: string) => Promise<WorkspacePickResult | null>;
         pickTagsFile: () => Promise<string | null>;
         readPositionImage: (
@@ -254,6 +255,13 @@ declare global {
                 background: number;
               }>;
             }
+          | { ok: false; error: string }
+        >;
+        listKillCsv: (workspacePath: string) => Promise<
+          Array<{ posId: string; path: string }>
+        >;
+        loadKillCsv: (path: string) => Promise<
+          | { ok: true; rows: Array<{ t: number; crop: string; label: boolean }> }
           | { ok: false; error: string }
         >;
       };

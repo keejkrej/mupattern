@@ -304,7 +304,7 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
       link.click();
     }, [canvasSize, imageBaseName, patternPx, transform, drawLattice]);
 
-    const exportCSV = useCallback(() => {
+    const exportCSV = useCallback(async () => {
       const w = canvasSize.width;
       const h = canvasSize.height;
       const { lattice, width: rectW, height: rectH } = patternPx;
@@ -350,7 +350,31 @@ export const UnifiedCanvas = forwardRef<UnifiedCanvasRef, UnifiedCanvasProps>(
         }
       }
 
-      const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+      const csv = rows.join("\n");
+
+      try {
+        if ("showSaveFilePicker" in window) {
+          const handle = await (
+            window as Window & {
+              showSaveFilePicker: (opts: {
+                suggestedName?: string;
+                types?: Array<{ description?: string; accept: Record<string, string[]> }>;
+              }) => Promise<FileSystemFileHandle>;
+            }
+          ).showSaveFilePicker({
+            suggestedName: `${imageBaseName}_bbox.csv`,
+            types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(csv);
+          await writable.close();
+          return;
+        }
+      } catch {
+        return;
+      }
+
+      const blob = new Blob([csv], { type: "text/csv" });
       const link = document.createElement("a");
       link.download = `${imageBaseName}_bbox.csv`;
       link.href = URL.createObjectURL(blob);

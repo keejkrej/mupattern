@@ -19,9 +19,9 @@ app = typer.Typer(add_completion=False, help="Create training datasets.")
 
 @app.command("kill")
 def kill(
-    zarr_path: Annotated[
+    input: Annotated[
         Path,
-        typer.Option("--zarr", help="Path to zarr store."),
+        typer.Option("--input", help="Path to zarr store (e.g. crops.zarr)."),
     ],
     pos: Annotated[
         int,
@@ -43,10 +43,10 @@ def kill(
 ) -> None:
     """Create a HuggingFace Dataset from crops.zarr + annotations CSV for kill-curve training."""
     try:
-        typer.echo(f"Loading pos {pos} from {zarr_path}")
+        typer.echo(f"Loading pos {pos} from {input}")
         ann_dict = _load_annotations(annotations)
         typer.echo(f"  {len(ann_dict)} annotations from {annotations}")
-        run_dataset(zarr_path, pos, annotations, output, on_progress=_progress_echo)
+        run_dataset(input, pos, annotations, output, on_progress=_progress_echo)
         typer.echo(f"Saved dataset to {output}")
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)

@@ -15,9 +15,9 @@ def _progress_echo(progress: float, message: str) -> None:
 
 
 def spot(
-    zarr_path: Annotated[
+    input: Annotated[
         Path,
-        typer.Option("--zarr", help="Path to zarr store."),
+        typer.Option("--input", help="Path to zarr store (e.g. crops.zarr)."),
     ],
     pos: Annotated[
         int,
@@ -45,9 +45,9 @@ def spot(
     """Detect spots per crop per timepoint and write a CSV."""
     try:
         typer.echo(f"Loading spotiflow model '{model}'...")
-        typer.echo(f"Processing pos {pos:03d}, channel {channel} from {zarr_path}")
+        typer.echo(f"Processing pos {pos:03d}, channel {channel} from {input}")
         run_detect(
-            zarr_path,
+            input,
             pos,
             channel,
             output,

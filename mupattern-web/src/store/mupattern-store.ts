@@ -57,6 +57,7 @@ export interface SeeState {
   selectedPos: string;
   t: number;
   c: number;
+  z: number;
   page: number;
   contrastMin: number;
   contrastMax: number;
@@ -72,6 +73,7 @@ const defaultSee: SeeState = {
   selectedPos: "",
   t: 0,
   c: 0,
+  z: 0,
   page: 0,
   contrastMin: 0,
   contrastMax: 65535,
@@ -270,6 +272,13 @@ export function setSeeC(c: number) {
   mupatternStore.setState((s) => ({
     ...s,
     see: { ...s.see, c },
+  }));
+}
+
+export function setSeeZ(z: number) {
+  mupatternStore.setState((s) => ({
+    ...s,
+    see: { ...s.see, z },
   }));
 }
 

@@ -290,6 +290,40 @@ function getMupatternBinPath(): string {
   }
 }
 
+interface KillPredictRow {
+  t: number;
+  crop: string;
+  label: boolean;
+}
+
+async function parseKillCsv(csvPath: string): Promise<KillPredictRow[]> {
+  try {
+    const content = await readFile(csvPath, "utf8");
+    const lines = content.trim().split("\n");
+    if (lines.length < 2) return [];
+    const parts0 = lines[0].split(",").map((p) => p.trim().toLowerCase());
+    const ti = parts0.indexOf("t");
+    const ci = parts0.indexOf("crop");
+    const li = parts0.indexOf("label");
+    if (ti < 0 || ci < 0 || li < 0) return [];
+    const rows: KillPredictRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length > Math.max(ti, ci, li)) {
+        const labelVal = parts[li]?.trim().toLowerCase();
+        rows.push({
+          t: Number.parseInt(parts[ti] ?? "0", 10),
+          crop: parts[ci]?.trim() ?? "",
+          label: labelVal === "true" || labelVal === "1",
+        });
+      }
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 async function parseExpressionCsv(csvPath: string): Promise<ExpressionAnalyzeRow[]> {
   try {
     const content = await readFile(csvPath, "utf8");
@@ -729,67 +763,6 @@ async function loadZarrFrame({
   }
 }
 
-async function runKillPredictTask(
-  request: RunKillPredictRequest,
-  sendProgress: (progress: number, message: string) => void,
-): Promise<RunKillPredictResponse> {
-  const { runKillPredict } = await import("./kill-inference.js");
-  const context = await getZarrContext(request.workspacePath);
-
-  const listCrops = async (_workspacePath: string, posId: string): Promise<string[]> => {
-    const p = path.join(request.workspacePath, "crops.zarr", "pos", posId, "crop");
-    const entries = await readdir(p, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .sort();
-  };
-
-  const getCropShape = async (
-    workspacePath: string,
-    posId: string,
-    cropId: string,
-  ): Promise<{ nT: number }> => {
-    const arr = await getCachedZarrArray(workspacePath, posId, cropId);
-    return { nT: arr.shape[0] };
-  };
-
-  const getCropChunk = async (
-    workspacePath: string,
-    posId: string,
-    cropId: string,
-    t: number,
-    c: number,
-    z: number,
-  ): Promise<{ data: Uint16Array; height: number; width: number }> => {
-    let arr = await getCachedZarrArray(workspacePath, posId, cropId);
-    let chunk: ZarrChunk;
-    try {
-      chunk = await arr.getChunk([t, c, z, 0, 0]);
-    } catch {
-      context.arrays.delete(`${posId}/${cropId}`);
-      arr = await getCachedZarrArray(workspacePath, posId, cropId);
-      chunk = await arr.getChunk([t, c, z, 0, 0]);
-    }
-    const source = chunk.data;
-    const typed =
-      source instanceof Uint16Array ? source : Uint16Array.from(source as ArrayLike<number>);
-    const data = new Uint16Array(typed.length);
-    data.set(typed);
-    const height = chunk.shape[chunk.shape.length - 2];
-    const width = chunk.shape[chunk.shape.length - 1];
-    return { data, height, width };
-  };
-
-  return runKillPredict({
-    ...request,
-    getCropChunk,
-    getCropShape,
-    listCrops,
-    sendProgress,
-  });
-}
-
 async function hasMasks({ masksPath }: HasMasksRequest): Promise<HasMasksResponse> {
   try {
     await access(masksPath, constants.R_OK);
@@ -1087,6 +1060,15 @@ function registerWorkspaceStateIpc(): void {
     return pickWorkspaceDirectory();
   });
 
+  ipcMain.handle("workspace:path-exists", async (_event, payload: { path: string }): Promise<boolean> => {
+    try {
+      await access(payload.path, constants.R_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle(
     "workspace:rescan-directory",
     async (_event, payload: { path: string }): Promise<WorkspaceScanResult | null> => {
@@ -1264,6 +1246,41 @@ function registerWorkspaceStateIpc(): void {
     },
   );
 
+  const KILL_CSV_RE = /^(?:Pos(\d+)_)?(?:prediction|predictions).*\.csv$/i;
+  ipcMain.handle(
+    "application:list-kill-csv",
+    async (_event, workspacePath: string): Promise<Array<{ posId: string; path: string }>> => {
+      try {
+        const entries = await readdir(workspacePath, { withFileTypes: true });
+        const out: Array<{ posId: string; path: string }> = [];
+        for (const e of entries) {
+          if (!e.isFile()) continue;
+          const m = e.name.match(KILL_CSV_RE);
+          if (m) out.push({ posId: m[1] ?? path.basename(e.name, ".csv"), path: path.join(workspacePath, e.name) });
+        }
+        out.sort((a, b) => a.posId.localeCompare(b.posId, undefined, { numeric: true }));
+        return out;
+      } catch {
+        return [];
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "application:load-kill-csv",
+    async (
+      _event,
+      csvPath: string,
+    ): Promise<{ ok: true; rows: KillPredictRow[] } | { ok: false; error: string }> => {
+      try {
+        const rows = await parseKillCsv(csvPath);
+        return { ok: true, rows };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
   ipcMain.handle(
     "tasks:run-movie",
     async (
@@ -1300,7 +1317,7 @@ function registerWorkspaceStateIpc(): void {
       }
       const args = [
         "movie",
-        "--input-zarr",
+        "--input",
         payload.input_zarr,
         "--pos",
         String(payload.pos),
@@ -1353,8 +1370,8 @@ function registerWorkspaceStateIpc(): void {
       };
       const args = [
         "expression",
-        "--workspace",
-        payload.workspacePath,
+        "--input",
+        path.join(payload.workspacePath, "crops.zarr"),
         "--pos",
         String(payload.pos),
         "--channel",
@@ -1404,15 +1421,38 @@ function registerWorkspaceStateIpc(): void {
         });
         updateTask(payload.taskId, { progress_events: progressEvents }).catch(() => {});
       };
-      const result = await runKillPredictTask(payload, sendProgress);
+      const args = [
+        "kill",
+        "--input",
+        path.join(payload.workspacePath, "crops.zarr"),
+        "--pos",
+        String(payload.pos),
+        "--model",
+        payload.modelPath,
+        "--output",
+        payload.output,
+        "--batch-size",
+        String(payload.batchSize ?? 256),
+      ];
+      const result = await runMupatternSubprocess(args, sendProgress);
+      if (!result.ok) {
+        await updateTask(payload.taskId, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error: result.error,
+          progress_events: progressEvents,
+        });
+        return { ok: false, error: result.error };
+      }
+      const rows = await parseKillCsv(payload.output);
       await updateTask(payload.taskId, {
-        status: result.ok ? "succeeded" : "failed",
+        status: "succeeded",
         finished_at: new Date().toISOString(),
-        error: result.ok ? null : result.error,
-        result: result.ok ? { output: result.output, rows: result.rows } : undefined,
+        error: null,
+        result: { output: payload.output, rows },
         progress_events: progressEvents,
       });
-      return result;
+      return { ok: true, output: payload.output, rows };
     },
   );
 

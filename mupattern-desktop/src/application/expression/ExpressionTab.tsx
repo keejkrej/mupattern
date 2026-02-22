@@ -89,7 +89,7 @@ export function ExpressionTab({ workspace: _workspace, rows }: ExpressionTabProp
             </span>
           </div>
           <div>
-            <h3 className="text-sm font-medium mb-2">Background-corrected total fluor per crop</h3>
+            <h3 className="text-sm font-medium mb-2">Background-corrected total fluorescence</h3>
             <div className="h-[32rem] flex [&_*]:pointer-events-none">
               <div
                 className="flex items-center justify-center pr-1 shrink-0 text-sm text-muted-foreground"
@@ -138,6 +138,7 @@ export function ExpressionTab({ workspace: _workspace, rows }: ExpressionTabProp
                       dot={false}
                       connectNulls
                       isAnimationActive={false}
+                      legendType="line"
                     />
                     <Legend align="left" verticalAlign="top" />
                   </LineChart>

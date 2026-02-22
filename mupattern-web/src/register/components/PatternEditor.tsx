@@ -4,6 +4,7 @@ import type { Lattice, PatternConfigUm } from "@mupattern/shared/register/types"
 
 interface PatternEditorProps {
   pattern: PatternConfigUm;
+  latticeMinUm: number;
   onLatticeUpdate: (updates: Partial<Lattice>) => void;
   onWidthUpdate: (width: number) => void;
   onHeightUpdate: (height: number) => void;
@@ -59,6 +60,7 @@ function SliderRow({
 
 export function PatternEditor({
   pattern,
+  latticeMinUm,
   onLatticeUpdate,
   onWidthUpdate,
   onHeightUpdate,
@@ -76,7 +78,7 @@ export function PatternEditor({
         <SliderRow
           label="a"
           value={lattice.a}
-          min={1}
+          min={latticeMinUm}
           max={200}
           step={0.5}
           unit="µm"
@@ -100,7 +102,7 @@ export function PatternEditor({
         <SliderRow
           label="b"
           value={lattice.b}
-          min={1}
+          min={latticeMinUm}
           max={200}
           step={0.5}
           unit="µm"

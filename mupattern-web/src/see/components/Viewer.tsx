@@ -19,6 +19,7 @@ import {
   setSelectedPos as persistSelectedPos,
   setT as persistT,
   setC as persistC,
+  setZ as persistZ,
   setPage as persistPage,
   setContrast as persistContrast,
   setAnnotating as persistAnnotating,
@@ -57,6 +58,7 @@ export function Viewer({ store, index }: ViewerProps) {
   const selectedPos = useStore(mupatternStore, (s) => s.see.selectedPos);
   const t = useStore(mupatternStore, (s) => s.see.t);
   const c = useStore(mupatternStore, (s) => s.see.c);
+  const z = useStore(mupatternStore, (s) => s.see.z);
   const page = useStore(mupatternStore, (s) => s.see.page);
   const contrastMin = useStore(mupatternStore, (s) => s.see.contrastMin);
   const contrastMax = useStore(mupatternStore, (s) => s.see.contrastMax);
@@ -74,10 +76,7 @@ export function Viewer({ store, index }: ViewerProps) {
 
   // Ephemeral state
   const [playing, setPlaying] = useState(false);
-  const [autoContrastDone, setAutoContrastDone] = useState(
-    // If we have persisted contrast values that aren't defaults, skip auto
-    contrastMin !== 0 || contrastMax !== 65535,
-  );
+  const [autoContrastDone, setAutoContrastDone] = useState(true);
 
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -95,8 +94,11 @@ export function Viewer({ store, index }: ViewerProps) {
   const crops: CropInfo[] = index.crops.get(validPos) ?? [];
   const maxT = crops.length > 0 ? crops[0].shape[0] - 1 : 0;
   const numChannels = crops.length > 0 ? crops[0].shape[1] : 1;
+  const maxZ = crops.length > 0 ? crops[0].shape[2] - 1 : 0;
   const totalPages = Math.ceil(crops.length / PAGE_SIZE);
   const clampedT = Math.min(t, maxT);
+  const clampedZ = Math.min(z, maxZ);
+  const clampedC = Math.min(c, Math.max(0, numChannels - 1));
   const clampedPage = Math.min(page, Math.max(0, totalPages - 1));
   const pageCrops = crops.slice(clampedPage * PAGE_SIZE, (clampedPage + 1) * PAGE_SIZE);
 
@@ -104,6 +106,12 @@ export function Viewer({ store, index }: ViewerProps) {
   useEffect(() => {
     if (clampedT !== t) persistT(clampedT);
   }, [clampedT, t]);
+  useEffect(() => {
+    if (clampedC !== c) persistC(clampedC);
+  }, [clampedC, c]);
+  useEffect(() => {
+    if (clampedZ !== z) persistZ(clampedZ);
+  }, [clampedZ, z]);
   useEffect(() => {
     if (clampedPage !== page) persistPage(clampedPage);
   }, [clampedPage, page]);
@@ -137,26 +145,34 @@ export function Viewer({ store, index }: ViewerProps) {
     async function loadPage() {
       const frames = await Promise.all(
         pageCrops.map((crop) =>
-          loadFrame(store, crop.posId, crop.cropId, clampedT, c).catch(() => null),
+          loadFrame(store, crop.posId, crop.cropId, clampedT, clampedC, clampedZ).catch(
+            () => null,
+          ),
         ),
       );
 
       if (cancelled) return;
+
+      let renderContrastMin = contrastMin;
+      let renderContrastMax = contrastMax;
 
       // Compute auto-contrast from all visible crops combined
       if (!autoContrastDone) {
         const allData: number[] = [];
         for (const f of frames) {
           if (f) {
-            for (let i = 0; i < f.data.length; i += 4) {
+            for (let i = 0; i < f.data.length; i++) {
               allData.push(f.data[i]);
             }
           }
         }
         if (allData.length > 0) {
-          const sorted = new Uint16Array(allData).sort();
-          const lo = sorted[Math.floor(sorted.length * 0.02)];
-          const hi = sorted[Math.floor(sorted.length * 0.98)];
+          const sorted = new Uint16Array(allData).sort((a, b) => a - b);
+          const lo = sorted[Math.floor(sorted.length * 0.001)];
+          let hi = sorted[Math.floor(sorted.length * 0.999)];
+          if (hi === lo) hi = lo + 1;
+          renderContrastMin = lo;
+          renderContrastMax = hi;
           persistContrast(lo, hi);
           setAutoContrastDone(true);
         }
@@ -165,15 +181,15 @@ export function Viewer({ store, index }: ViewerProps) {
       // Render each crop
       for (let i = 0; i < pageCrops.length; i++) {
         const frame = frames[i];
-        const canvas = canvasRefs.current.get(pageCrops[i].cropId);
+        const canvas = canvasRefs.current.get(canvasKey(pageCrops[i].posId, pageCrops[i].cropId));
         if (!frame || !canvas) continue;
         renderUint16ToCanvas(
           canvas,
           frame.data,
           frame.width,
           frame.height,
-          contrastMin,
-          contrastMax,
+          renderContrastMin,
+          renderContrastMax,
         );
         // Overlay spots
         if (showSpots) {
@@ -193,7 +209,8 @@ export function Viewer({ store, index }: ViewerProps) {
     store,
     validPos,
     clampedT,
-    c,
+    clampedC,
+    clampedZ,
     clampedPage,
     contrastMin,
     contrastMax,
@@ -203,11 +220,11 @@ export function Viewer({ store, index }: ViewerProps) {
   ]);
 
   const setCanvasRef = useCallback(
-    (cropId: string) => (el: HTMLCanvasElement | null) => {
+    (key: string) => (el: HTMLCanvasElement | null) => {
       if (el) {
-        canvasRefs.current.set(cropId, el);
+        canvasRefs.current.set(key, el);
       } else {
-        canvasRefs.current.delete(cropId);
+        canvasRefs.current.delete(key);
       }
     },
     [],
@@ -224,6 +241,11 @@ export function Viewer({ store, index }: ViewerProps) {
 
   const handleChangeChannel = useCallback((ch: number) => {
     persistC(ch);
+    setAutoContrastDone(false);
+  }, []);
+
+  const handleChangeZ = useCallback((zVal: number) => {
+    persistZ(zVal);
     setAutoContrastDone(false);
   }, []);
 
@@ -308,111 +330,152 @@ export function Viewer({ store, index }: ViewerProps) {
     <div className="flex flex-col h-screen">
       <AppHeader title="See" subtitle="Micropattern crop viewer" backTo="/" backLabel="Home" />
 
-      {/* Slider row */}
-      <div className="px-4 py-1 border-b">
-        <Slider min={0} max={maxT} value={[clampedT]} onValueChange={([v]) => setT(v)} />
-      </div>
-
-      {/* Frame controls + contrast */}
-      <div className="flex items-center justify-center gap-3 px-4 py-2 border-b">
-        <Button variant="ghost" size="icon-xs" onClick={() => setT(0)} disabled={clampedT === 0}>
-          <SkipBack className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setT(Math.max(0, clampedT - 10))}
-          disabled={clampedT === 0}
-        >
-          <ChevronsLeft className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setT(Math.max(0, clampedT - 1))}
-          disabled={clampedT === 0}
-        >
-          <ChevronLeft className="size-3" />
-        </Button>
-        <Button variant="ghost" size="icon-xs" onClick={() => setPlaying(!playing)}>
-          {playing ? <Pause className="size-3" /> : <Play className="size-3" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setT(Math.min(maxT, clampedT + 1))}
-          disabled={clampedT >= maxT}
-        >
-          <ChevronRight className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setT(Math.min(maxT, clampedT + 10))}
-          disabled={clampedT >= maxT}
-        >
-          <ChevronsRight className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setT(maxT)}
-          disabled={clampedT >= maxT}
-        >
-          <SkipForward className="size-3" />
-        </Button>
-
-        <span className="text-sm tabular-nums whitespace-nowrap">
-          t = {clampedT} / {maxT}
-        </span>
-
-        <div className="mx-2 h-4 w-px bg-border" />
-
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Contrast:</span>
-          <input
-            type="number"
-            value={contrastMin}
-            onChange={(e) => setContrastMin(Number(e.target.value))}
-            className="w-20 bg-secondary text-center rounded px-1 py-0.5 text-sm"
-          />
-          <span>-</span>
-          <input
-            type="number"
-            value={contrastMax}
-            onChange={(e) => setContrastMax(Number(e.target.value))}
-            className="w-20 bg-secondary text-center rounded px-1 py-0.5 text-sm"
-          />
-          <button
-            onClick={resetAutoContrast}
-            className="text-xs text-muted-foreground hover:text-foreground underline"
-          >
-            Auto
-          </button>
-        </div>
-      </div>
-
-      {/* Main area: left sidebar + crop grid + right sidebar */}
+      {/* Main area: left sidebar | center column | right sidebar */}
       <div className="flex flex-1 overflow-hidden">
         <LeftSidebar
           positions={index.positions}
           validPos={validPos}
           onPositionChange={handleChangePos}
           numChannels={numChannels}
-          channel={c}
+          channel={clampedC}
           onChannelChange={handleChangeChannel}
+          maxZ={maxZ}
+          z={clampedZ}
+          onZChange={handleChangeZ}
         />
-        {/* Crop grid */}
-        <div className="flex-1 overflow-hidden p-4">
-          <div className="grid grid-cols-3 grid-rows-3 gap-2 h-full">
-            {pageCrops.map((crop) => (
-              <div
-                key={crop.cropId}
-                className={`relative rounded-sm ${annotating ? "cursor-crosshair" : ""} ${borderClass(crop.cropId)}`}
-                onClick={annotating ? () => handleAnnotate(crop.cropId) : undefined}
+        {/* Crop grid column: page row, frame control, grid */}
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          <div className="shrink-0 grid grid-cols-3 items-center gap-4 px-4 py-2 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={clampedPage === 0}
+                onClick={() => setPage(clampedPage - 1)}
+                title="Previous page"
               >
-                <canvas
-                  ref={setCanvasRef(crop.cropId)}
+                <ChevronLeft className="size-3" />
+              </Button>
+              <span className="text-sm tabular-nums min-w-[4rem] text-center">
+                {clampedPage + 1} / {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={clampedPage >= totalPages - 1}
+                onClick={() => setPage(clampedPage + 1)}
+                title="Next page"
+              >
+                <ChevronRight className="size-3" />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2 text-sm justify-self-center">
+              <span className="text-muted-foreground">Contrast:</span>
+              <input
+                type="number"
+                value={contrastMin}
+                onChange={(e) => setContrastMin(Number(e.target.value))}
+                className="w-20 bg-secondary text-center rounded px-1 py-0.5 text-sm"
+              />
+              <span>-</span>
+              <input
+                type="number"
+                value={contrastMax}
+                onChange={(e) => setContrastMax(Number(e.target.value))}
+                className="w-20 bg-secondary text-center rounded px-1 py-0.5 text-sm"
+              />
+              <Button variant="outline" size="xs" className="text-sm" onClick={resetAutoContrast}>
+                Auto
+              </Button>
+            </div>
+            <span className="text-sm tabular-nums whitespace-nowrap justify-self-end">
+              t = {clampedT} / {maxT}
+            </span>
+          </div>
+          {/* Frame control */}
+          <div className="shrink-0 border-b border-border flex flex-col gap-2 px-4 py-2">
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setT(0)}
+                disabled={clampedT === 0}
+                title="First frame"
+              >
+                <SkipBack className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setT(Math.max(0, clampedT - 10))}
+                disabled={clampedT === 0}
+                title="-10 frames"
+              >
+                <ChevronsLeft className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setT(Math.max(0, clampedT - 1))}
+                disabled={clampedT === 0}
+                title="Previous frame"
+              >
+                <ChevronLeft className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setPlaying(!playing)}
+                title={playing ? "Pause" : "Play"}
+              >
+                {playing ? <Pause className="size-3" /> : <Play className="size-3" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setT(Math.min(maxT, clampedT + 1))}
+                disabled={clampedT >= maxT}
+                title="Next frame"
+              >
+                <ChevronRight className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setT(Math.min(maxT, clampedT + 10))}
+                disabled={clampedT >= maxT}
+                title="+10 frames"
+              >
+                <ChevronsRight className="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setT(maxT)}
+                disabled={clampedT >= maxT}
+                title="Last frame"
+              >
+                <SkipForward className="size-3" />
+              </Button>
+            </div>
+            <Slider
+              min={0}
+              max={maxT}
+              value={[clampedT]}
+              onValueChange={([v]) => setT(v)}
+              className="w-full"
+            />
+          </div>
+          <div className="flex-1 overflow-hidden p-4 min-h-0">
+            <div className="grid grid-cols-3 grid-rows-3 gap-2 h-full">
+            {pageCrops.map((crop) => (
+                <div
+                  key={canvasKey(crop.posId, crop.cropId)}
+                  className={`relative rounded-sm ${annotating ? "cursor-crosshair" : ""} ${borderClass(crop.cropId)}`}
+                  onClick={annotating ? () => handleAnnotate(crop.cropId) : undefined}
+                >
+                  <canvas
+                    ref={setCanvasRef(canvasKey(crop.posId, crop.cropId))}
                   className="block w-full h-full object-contain"
                   style={{ imageRendering: "pixelated" }}
                 />
@@ -421,11 +484,12 @@ export function Viewer({ store, index }: ViewerProps) {
                 </div>
               </div>
             ))}
+            </div>
           </div>
         </div>
 
         {/* Right sidebar: overlays */}
-        <aside className="w-48 border-l border-border p-3 flex flex-col gap-4 text-sm overflow-y-auto">
+        <aside className="w-64 flex-shrink-0 border-l border-border p-3 flex flex-col gap-4 text-sm overflow-y-auto">
           {/* Annotations section */}
           <div className="flex flex-col gap-2">
             <h3 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">
@@ -512,48 +576,10 @@ export function Viewer({ store, index }: ViewerProps) {
           </div>
         </aside>
       </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-center gap-4 px-4 py-2 border-t">
-        <span className="text-sm text-muted-foreground">{crops.length} crops</span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={clampedPage === 0}
-            onClick={() => setPage(0)}
-          >
-            <SkipBack className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={clampedPage === 0}
-            onClick={() => setPage(clampedPage - 1)}
-          >
-            <ChevronLeft className="size-3" />
-          </Button>
-          <span className="text-sm tabular-nums">
-            Page {clampedPage + 1} / {totalPages}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={clampedPage >= totalPages - 1}
-            onClick={() => setPage(clampedPage + 1)}
-          >
-            <ChevronRight className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            disabled={clampedPage >= totalPages - 1}
-            onClick={() => setPage(totalPages - 1)}
-          >
-            <SkipForward className="size-3" />
-          </Button>
-        </div>
-      </div>
     </div>
   );
+}
+
+function canvasKey(posId: string, cropId: string): string {
+  return `${posId}:${cropId}`;
 }

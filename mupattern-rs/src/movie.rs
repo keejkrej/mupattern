@@ -9,7 +9,7 @@ use crate::zarr;
 #[derive(Args, Clone)]
 pub struct MovieArgs {
     #[arg(long)]
-    pub input_zarr: String,
+    pub input: String,
     #[arg(long)]
     pub pos: u32,
     #[arg(long)]
@@ -34,7 +34,7 @@ pub fn run(
     args: MovieArgs,
     progress: impl Fn(f64, &str),
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let zarr_path = Path::new(&args.input_zarr);
+    let zarr_path = Path::new(&args.input);
     let crop_id = format!("{:03}", args.crop);
     let pos_id = format!("{:03}", args.pos);
 

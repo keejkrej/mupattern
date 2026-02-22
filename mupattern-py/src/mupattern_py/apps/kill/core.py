@@ -322,7 +322,7 @@ def run_predict(
     pos: int,
     model_path: str,
     output: Path,
-    batch_size: int = 64,
+    batch_size: int = 256,
     t_start: int | None = None,
     t_end: int | None = None,
     crop_start: int | None = None,
@@ -374,18 +374,6 @@ def run_predict(
         on_progress(1.0, f"Wrote {len(results)} predictions to {output}")
 
 
-def run_export_onnx(model_path: str, output_path: Path) -> None:
-    """Export a HuggingFace image classification model to ONNX format."""
-    from optimum.onnxruntime import ORTModelForImageClassification
-
-    model = ORTModelForImageClassification.from_pretrained(
-        model_path,
-        export=True,
-    )
-    output_path.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(str(output_path))
-
-
 def run_clean(input_csv: Path, output: Path) -> None:
     """Clean predictions by enforcing monotonicity."""
     df = _load_csv(input_csv)
@@ -394,40 +382,90 @@ def run_clean(input_csv: Path, output: Path) -> None:
     cleaned.to_csv(output, index=False)
 
 
-def run_plot(input_csv: Path, output: Path) -> None:
-    """Plot kill curve: number of present cells over time."""
+CLEAN_THRESHOLD = 0.8
+
+
+def _compute_death_times(df: pd.DataFrame) -> dict[str, int]:
+    """
+    Per-pattern: find the longest span [first frame, last true] with ≥80% true.
+    Death time = span end (chosen_end). If span duration = 1, set 0 (misdetection, neglected).
+    Matches desktop KillTab computeDeathTimes.
+    """
+    death_times: dict[str, int] = {}
+    for crop_id, group in df.groupby("crop"):
+        group = group.sort_values("t")
+        t_min = group["t"].iloc[0]
+        true_ts = sorted(group.loc[group["label"], "t"].unique().tolist())
+        if not true_ts:
+            death_times[crop_id] = 0
+            continue
+        chosen_end = -1
+        for i in range(len(true_ts) - 1, -1, -1):
+            end = true_ts[i]
+            span = group[(group["t"] >= t_min) & (group["t"] <= end)]
+            n_true = span["label"].sum()
+            if len(span) > 0 and n_true / len(span) >= CLEAN_THRESHOLD:
+                chosen_end = end
+                break
+        if chosen_end < 0:
+            chosen_end = true_ts[0]
+        span_duration = chosen_end - t_min + 1
+        death_times[crop_id] = 0 if span_duration == 1 else chosen_end
+    return death_times
+
+
+def run_plot(input_csv: Path, output: Path, bin_width: int = 5) -> None:
+    """Plot kill curve: n alive over time and death time distribution. Uses same clean logic as desktop KillTab."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     df = _load_csv(input_csv)
-    max_t = df["t"].max()
-    n_present = df.groupby("t")["label"].sum().sort_index()
+    death_times = _compute_death_times(df)
+    deaths = [d for d in death_times.values() if d > 0]
+    max_t = max(df["t"].max(), max(deaths, default=0), 0)
 
-    death_times = []
-    for crop_id, group in df.groupby("crop"):
-        group = group.sort_values("t")
-        first_false = group.loc[~group["label"], "t"]
-        if len(first_false) > 0:
-            t_death = first_false.iloc[0]
-            if t_death > 0:
-                death_times.append(t_death)
+    # Curve: n alive at t = count of crops where death_time >= t (and death_time > 0)
+    by_t: dict[int, int] = {}
+    for t in range(int(max_t) + 1):
+        n_alive = sum(1 for d in death_times.values() if d > 0 and d >= t)
+        by_t[t] = n_alive
+    curve_t = sorted(by_t.keys())
+    curve_n = [by_t[t] for t in curve_t]
+    if len(curve_t) == 1:
+        curve_t = [max(0, curve_t[0] - 1), curve_t[0]]
+        curve_n = [0, curve_n[0]]
+
+    # Histogram: count of crops per death time bin (bin_width frames each)
+    bin_width = max(1, bin_width)
+    if deaths:
+        bin_edges = list(range(1, int(max_t) + 2, bin_width))
+        if bin_edges[-1] <= max_t:
+            bin_edges.append(int(max_t) + 1)
+        hist_t = [(bin_edges[i] + bin_edges[i + 1] - 1) / 2 for i in range(len(bin_edges) - 1)]
+        hist_n = [
+            sum(1 for d in deaths if bin_edges[i] <= d < bin_edges[i + 1])
+            for i in range(len(bin_edges) - 1)
+        ]
+    else:
+        hist_t, hist_n = [], []
 
     fig, (ax_curve, ax_hist) = plt.subplots(
         1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [2, 1], "wspace": 0.3}
     )
 
-    ax_curve.plot(n_present.index, n_present.values, color="steelblue", linewidth=2)
-    ax_curve.fill_between(n_present.index, 0, n_present.values, alpha=0.15, color="steelblue")
+    ax_curve.plot(curve_t, curve_n, color="steelblue", linewidth=2)
+    ax_curve.fill_between(curve_t, 0, curve_n, alpha=0.15, color="steelblue")
     ax_curve.set_xlabel("t")
-    ax_curve.set_ylabel("n cells")
+    ax_curve.set_ylabel("n alive")
     ax_curve.set_title("Kill curve")
     ax_curve.set_xlim(0, max_t)
     ax_curve.set_ylim(0, None)
 
-    if death_times:
-        ax_hist.hist(death_times, bins=range(1, max_t + 2), color="tomato", edgecolor="white", alpha=0.8)
+    if hist_t and hist_n:
+        width = bin_width * 0.8
+        ax_hist.bar(hist_t, hist_n, width=width, color="tomato", edgecolor="white", alpha=0.8)
     ax_hist.set_xlabel("t (death)")
     ax_hist.set_ylabel("n crops")
     ax_hist.set_title("Death time distribution")
