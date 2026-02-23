@@ -23,7 +23,6 @@
     "@zarrita/storage": "^0.1.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "ffmpeg-static": "^5.3.0",
     "lucide-react": "^0.563.0",
     "numcodecs": "^0.3.2",
     "onnxruntime-node": "^1.24.2",
@@ -56,9 +55,17 @@
     "wait-on": "^8.0.5"
   },
   "build": {
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron-dist/**/*",
+      "package.json"
+    ],
     "extraResources": [
       {
-        "from": "../mupattern-rs/target/release/",
+        "from": "../target/release/",
         "to": "bin",
         "filter": [
           "mupattern*"

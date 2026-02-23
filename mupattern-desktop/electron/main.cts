@@ -306,8 +306,8 @@ function getMupatternBinPath(): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "bin", exe);
   }
-  // Use absolute path: from electron-dist/ go up to workspace root, then mupattern-rs/target/
-  const root = path.resolve(__dirname, "..", "..", "mupattern-rs", "target");
+  // Use absolute path: from electron-dist/ go up to workspace root, then target/
+  const root = path.resolve(__dirname, "..", "..", "target");
   const releasePath = path.join(root, "release", exe);
   const debugPath = path.join(root, "debug", exe);
   try {
@@ -321,6 +321,31 @@ function getMupatternBinPath(): string {
       return releasePath; // let spawn fail with ENOENT and show path in error
     }
   }
+}
+
+function getSystemFfmpegPath(): string | null {
+  const exe = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const pathEntries = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const commonEntries =
+    process.platform === "darwin"
+      ? ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+      : process.platform === "win32"
+        ? []
+        : ["/usr/local/bin", "/usr/bin", "/bin"];
+
+  const candidates = [...pathEntries, ...commonEntries].map((dir) => path.join(dir, exe));
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // continue
+    }
+  }
+  return null;
 }
 
 interface KillPredictRow {
@@ -1416,19 +1441,17 @@ function registerWorkspaceStateIpc(): void {
         });
         updateTask(payload.taskId, { progress_events: progressEvents }).catch(() => {});
       };
-      const ffmpegMod = await import("ffmpeg-static");
-      const ffmpegPath =
-        typeof ffmpegMod === "object" && ffmpegMod !== null && "default" in ffmpegMod
-          ? (ffmpegMod as { default: string | null }).default
-          : null;
-      if (!ffmpegPath || typeof ffmpegPath !== "string") {
+      const ffmpegPath = getSystemFfmpegPath();
+      if (!ffmpegPath) {
+        const error =
+          "ffmpeg not found. Install ffmpeg and ensure it is available in PATH (e.g. /opt/homebrew/bin/ffmpeg).";
         await updateTask(payload.taskId, {
           status: "failed",
           finished_at: new Date().toISOString(),
-          error: "ffmpeg binary not found",
+          error,
           progress_events: progressEvents,
         });
-        return { ok: false, error: "ffmpeg binary not found" };
+        return { ok: false, error };
       }
       const args = [
         "movie",

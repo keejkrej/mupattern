@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { useStore } from "@tanstack/react-store";
 import WorkspaceDashboard from "@/workspace/WorkspaceDashboard";
@@ -29,7 +29,7 @@ function WorkspaceOnlyRoute({
 
 function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <div className="min-h-full">
         <Toaster richColors position="bottom-right" />
         <Routes>
@@ -62,7 +62,7 @@ function App() {
           />
         </Routes>
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
