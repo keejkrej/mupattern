@@ -53,6 +53,45 @@ struct FrameIndex {
     width: u64,
 }
 
+/// Build ONNX session. Tries CUDA if use_cuda; on CUDA failure falls back to CPU.
+fn build_kill_session(
+    model_path: &Path,
+    use_cuda: bool,
+) -> Result<Session, Box<dyn std::error::Error>> {
+    #[cfg(any(windows, target_os = "linux"))]
+    if use_cuda {
+        let mut builder = Session::builder()?;
+        let cuda = CUDA::default();
+        if cuda.is_available().unwrap_or(false) {
+            if cuda.register(&mut builder).is_ok() {
+                match builder.commit_from_file(model_path) {
+                    Ok(s) => {
+                        eprintln!("kill: using CUDA for GPU acceleration.");
+                        let _ = std::io::stderr().flush();
+                        return Ok(s);
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.to_lowercase().contains("cuda")
+                            || msg.contains("no CUDA-capable device")
+                        {
+                            eprintln!("kill: CUDA failed ({}), falling back to CPU.", msg.lines().next().unwrap_or(&msg));
+                            let _ = std::io::stderr().flush();
+                            // Fall through to CPU path
+                        } else {
+                            return Err(e.into());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("kill: using CPU.");
+    let _ = std::io::stderr().flush();
+    Ok(Session::builder()?.commit_from_file(model_path)?)
+}
+
 /// Min-max normalize uint16 frame to 0-255.
 fn normalize_frame(data: &[u16]) -> Vec<u8> {
     if data.is_empty() {
@@ -174,37 +213,7 @@ pub fn run(
         .into());
     }
 
-    let mut session = {
-        #[allow(unused_mut)]
-        let mut builder = Session::builder()?;
-        #[cfg(any(windows, target_os = "linux"))]
-        if !args.cpu {
-            let cuda = CUDA::default();
-            match cuda.is_available() {
-                Ok(true) => {
-                    match cuda.register(&mut builder) {
-                        Ok(()) => {
-                            eprintln!("kill: using CUDA for GPU acceleration.");
-                            let _ = std::io::stderr().flush();
-                        }
-                        Err(e) => {
-                            eprintln!("kill: CUDA available but registration failed: {e}. Using CPU.");
-                            let _ = std::io::stderr().flush();
-                        }
-                    }
-                }
-                Ok(false) => {
-                    eprintln!("kill: CUDA not available in this build. Using CPU.");
-                    let _ = std::io::stderr().flush();
-                }
-                Err(e) => {
-                    eprintln!("kill: CUDA check failed: {e}. Using CPU.");
-                    let _ = std::io::stderr().flush();
-                }
-            }
-        }
-        builder.commit_from_file(&model_path)?
-    };
+    let mut session = build_kill_session(&model_path, !args.cpu)?;
 
     eprintln!("kill: model loaded, running inference...");
     let _ = std::io::stderr().flush();

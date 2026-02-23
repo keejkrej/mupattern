@@ -215,7 +215,8 @@ export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
                     <Area
                       type="monotone"
                       dataKey="n"
-                      fill="rgba(70, 130, 180, 0.25)"
+                      fill="var(--color-primary)"
+                      fillOpacity={0.25}
                       stroke="none"
                       baseValue={0}
                       isAnimationActive={false}
@@ -223,7 +224,7 @@ export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
                     <Line
                       type="monotone"
                       dataKey="n"
-                      stroke="rgb(70, 130, 180)"
+                      stroke="var(--color-primary)"
                       strokeWidth={2}
                       dot={false}
                       isAnimationActive={false}
@@ -247,7 +248,7 @@ export function KillTab({ workspace: _workspace, initialRows }: KillTabProps) {
                       tick={{ fontSize: 12 }}
                       label={{ value: "frequency", angle: -90, position: "insideLeft" }}
                     />
-                    <Bar dataKey="n" fill="hsl(var(--destructive))" isAnimationActive={false} />
+                    <Bar dataKey="n" fill="var(--color-primary)" isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

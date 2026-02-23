@@ -4,6 +4,7 @@ import { useStore } from "@tanstack/react-store";
 import { AppHeader, Button } from "@mupattern/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { workspaceStore } from "@/workspace/store";
+import { getVisibleTaskKinds } from "@/lib/workspace-tags";
 import { CropTaskConfigModal } from "@/tasks/components/CropTaskConfigModal";
 import { ConvertTaskConfigModal } from "@/tasks/components/ConvertTaskConfigModal";
 import { MovieTaskConfigModal } from "@/tasks/components/MovieTaskConfigModal";
@@ -82,6 +83,11 @@ export default function TasksDashboardPage() {
     () => (activeId ? (workspaces.find((w) => w.id === activeId) ?? null) : null),
     [activeId, workspaces],
   );
+
+  const visibleTaskKinds = useMemo(() => {
+    if (!activeWorkspace) return ["file.convert"];
+    return getVisibleTaskKinds(activeWorkspace.workspaceTags ?? []);
+  }, [activeWorkspace]);
 
   const [positionsWithBboxResolved, setPositionsWithBboxResolved] = useState<number[]>([]);
 
@@ -659,76 +665,88 @@ export default function TasksDashboardPage() {
               </Button>
             {addMenuOpen && (
               <div className="absolute left-0 top-full mt-1 border rounded bg-background shadow-lg py-1 z-20 min-w-[120px]">
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm"
-                  onClick={() => {
-                    setConvertModalOpen(true);
-                    setAddMenuOpen(false);
-                  }}
-                >
-                  Convert
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!activeWorkspace}
-                  onClick={() => {
-                    if (!activeWorkspace) return;
-                    setCropModalOpen(true);
-                    setAddMenuOpen(false);
-                  }}
-                >
-                  Crop
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!activeWorkspace}
-                  onClick={() => {
-                    if (!activeWorkspace) return;
-                    setMovieModalOpen(true);
-                    setAddMenuOpen(false);
-                  }}
-                >
-                  Movie
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!activeWorkspace}
-                  onClick={() => {
-                    if (!activeWorkspace) return;
-                    setExpressionModalOpen(true);
-                    setAddMenuOpen(false);
-                  }}
-                >
-                  Expression
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!activeWorkspace}
-                  onClick={() => {
-                    if (!activeWorkspace) return;
-                    setKillModalOpen(true);
-                    setAddMenuOpen(false);
-                  }}
-                >
-                  Kill
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!activeWorkspace}
-                  onClick={() => {
-                    if (!activeWorkspace) return;
-                    setTissueModalOpen(true);
-                    setAddMenuOpen(false);
-                  }}
-                >
-                  Tissue
-                </button>
+                {visibleTaskKinds.includes("file.convert") && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm"
+                    onClick={() => {
+                      setConvertModalOpen(true);
+                      setAddMenuOpen(false);
+                    }}
+                  >
+                    Convert
+                  </button>
+                )}
+                {visibleTaskKinds.includes("file.crop") && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!activeWorkspace}
+                    onClick={() => {
+                      if (!activeWorkspace) return;
+                      setCropModalOpen(true);
+                      setAddMenuOpen(false);
+                    }}
+                  >
+                    Crop
+                  </button>
+                )}
+                {visibleTaskKinds.includes("file.movie") && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!activeWorkspace}
+                    onClick={() => {
+                      if (!activeWorkspace) return;
+                      setMovieModalOpen(true);
+                      setAddMenuOpen(false);
+                    }}
+                  >
+                    Movie
+                  </button>
+                )}
+                {visibleTaskKinds.includes("expression.analyze") && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!activeWorkspace}
+                    onClick={() => {
+                      if (!activeWorkspace) return;
+                      setExpressionModalOpen(true);
+                      setAddMenuOpen(false);
+                    }}
+                  >
+                    Expression
+                  </button>
+                )}
+                {visibleTaskKinds.includes("kill.predict") && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!activeWorkspace}
+                    onClick={() => {
+                      if (!activeWorkspace) return;
+                      setKillModalOpen(true);
+                      setAddMenuOpen(false);
+                    }}
+                  >
+                    Kill
+                  </button>
+                )}
+                {visibleTaskKinds.includes("tissue.analyze") && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!activeWorkspace}
+                    onClick={() => {
+                      if (!activeWorkspace) return;
+                      setTissueModalOpen(true);
+                      setAddMenuOpen(false);
+                    }}
+                  >
+                    Tissue
+                  </button>
+                )}
               </div>
             )}
             </div>

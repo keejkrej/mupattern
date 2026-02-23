@@ -1559,7 +1559,7 @@ function registerWorkspaceStateIpc(): void {
         });
         updateTask(payload.taskId, { progress_events: progressEvents }).catch(() => {});
       };
-      const args = [
+      const baseArgs = [
         "kill",
         "--input",
         path.join(payload.workspacePath, "crops.zarr"),
@@ -1572,7 +1572,15 @@ function registerWorkspaceStateIpc(): void {
         "--batch-size",
         String(payload.batchSize ?? 256),
       ];
-      const result = await runMupatternSubprocess(args, sendProgress);
+      let result = await runMupatternSubprocess(baseArgs, sendProgress);
+      if (
+        !result.ok &&
+        (result.error.toLowerCase().includes("cuda") ||
+          result.error.includes("no CUDA-capable device"))
+      ) {
+        sendProgress(0, "CUDA unavailable, retrying on CPU...");
+        result = await runMupatternSubprocess([...baseArgs, "--cpu"], sendProgress);
+      }
       if (!result.ok) {
         await updateTask(payload.taskId, {
           status: "failed",

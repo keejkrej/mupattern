@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@tanstack/react-store";
 import { Button, HexBackground, ThemeToggle, useTheme } from "@mupattern/shared";
-import { ArrowLeft, Crop, Plus } from "lucide-react";
+import { ArrowLeft, Crop, Pencil, Plus } from "lucide-react";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { toast } from "sonner";
 import {
@@ -18,10 +18,17 @@ import {
   togglePositionTagFilter,
   clearPositionTagFilters,
   setPositionTagsFromDict,
+  setWorkspaceTags,
   getWorkspaceVisiblePositionIndices,
   type Workspace,
 } from "@/workspace/store";
 import { parseSliceStringOverValues } from "@/lib/slices";
+import {
+  WORKSPACE_ASSAY_TYPES,
+  ASSAY_TYPE_DISPLAY,
+  getWorkspaceAssayType,
+  type WorkspaceAssayType,
+} from "@/lib/workspace-tags";
 import { posTagsToDict } from "@/lib/tags-yaml";
 import { CropTaskConfigModal } from "@/tasks/components/CropTaskConfigModal";
 import { createCropTask } from "@/tasks/lib/create-crop-task";
@@ -44,6 +51,21 @@ export default function WorkspaceDashboard() {
   const [pathExistsByWorkspaceId, setPathExistsByWorkspaceId] = useState<
     Record<string, boolean>
   >({});
+  const [pendingWorkspace, setPendingWorkspace] = useState<{
+    path: string;
+    name: string;
+    positions: number[];
+    channels: number[];
+    times: number[];
+    zSlices: number[];
+  } | null>(null);
+  const [pendingWorkspaceAssayType, setPendingWorkspaceAssayType] =
+    useState<WorkspaceAssayType>("free");
+  const [assayTypePopoverOpen, setAssayTypePopoverOpen] = useState(false);
+
+  const setWorkspaceAssayType = useCallback((type: WorkspaceAssayType, ws: Workspace) => {
+    setWorkspaceTags(ws.id, type === "free" ? [] : [type]);
+  }, []);
 
   const handleAddWorkspace = useCallback(async () => {
     setError(null);
@@ -55,22 +77,15 @@ export default function WorkspaceDashboard() {
         return;
       }
       const { path, name, positions, channels, times, zSlices } = result;
-      const workspace: Workspace = {
-        id: crypto.randomUUID(),
+      setPendingWorkspace({
+        path,
         name,
-        rootPath: path,
         positions,
-        posTags: [],
-        positionFilterLabels: [],
-        channels: channels.length > 0 ? channels : [0],
-        times: times.length > 0 ? times : [0],
-        zSlices: zSlices.length > 0 ? zSlices : [0],
-        selectedChannel: channels[0] ?? 0,
-        selectedTime: times[0] ?? 0,
-        selectedZ: zSlices[0] ?? 0,
-        currentIndex: 0,
-      };
-      addWorkspace(workspace);
+        channels,
+        times,
+        zSlices,
+      });
+      setPendingWorkspaceAssayType("free");
     } catch (e) {
       if ((e as DOMException).name !== "AbortError") {
         setError("Failed to open folder.");
@@ -79,6 +94,31 @@ export default function WorkspaceDashboard() {
       setLoading(false);
     }
   }, []);
+
+  const handleConfirmPendingWorkspace = useCallback(() => {
+    if (!pendingWorkspace) return;
+    const { path, name, positions, channels, times, zSlices } = pendingWorkspace;
+    const workspace: Workspace = {
+      id: crypto.randomUUID(),
+      name,
+      rootPath: path,
+      positions,
+      posTags: [],
+      positionFilterLabels: [],
+      workspaceTags:
+        pendingWorkspaceAssayType === "free" ? [] : [pendingWorkspaceAssayType],
+      channels: channels.length > 0 ? channels : [0],
+      times: times.length > 0 ? times : [0],
+      zSlices: zSlices.length > 0 ? zSlices : [0],
+      selectedChannel: channels[0] ?? 0,
+      selectedTime: times[0] ?? 0,
+      selectedZ: zSlices[0] ?? 0,
+      currentIndex: 0,
+    };
+    addWorkspace(workspace);
+    setPendingWorkspace(null);
+    setPendingWorkspaceAssayType("free");
+  }, [pendingWorkspace, pendingWorkspaceAssayType]);
 
   const handleOpen = useCallback(async (ws: Workspace) => {
     setError(null);
@@ -296,11 +336,52 @@ export default function WorkspaceDashboard() {
 
         {activeWorkspace ? (
           <>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <Button variant="ghost" size="icon-sm" onClick={() => setActiveWorkspace(null)}>
                 <ArrowLeft className="size-4" />
               </Button>
               <h2 className="text-lg font-medium">{activeWorkspace.name}</h2>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAssayTypePopoverOpen((o) => !o)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded border text-xs bg-background/60 hover:bg-background"
+                  title="Edit assay type"
+                >
+                  <span className="px-1.5 py-0.5 rounded bg-primary/10">
+                    {ASSAY_TYPE_DISPLAY[getWorkspaceAssayType(activeWorkspace.workspaceTags)]}
+                  </span>
+                  <Pencil className="size-3 text-muted-foreground" />
+                </button>
+                {assayTypePopoverOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[9998]"
+                      onClick={() => setAssayTypePopoverOpen(false)}
+                      aria-hidden
+                    />
+                    <div className="absolute left-0 top-full mt-1 z-[9999] border rounded bg-background shadow-lg p-2 min-w-[140px]">
+                      <p className="text-xs text-muted-foreground mb-2">Assay type</p>
+                      {WORKSPACE_ASSAY_TYPES.map((type) => (
+                        <label
+                          key={type}
+                          className="flex items-center gap-2 py-1 text-sm cursor-pointer hover:bg-accent/50 rounded px-1"
+                        >
+                          <input
+                            type="radio"
+                            name="workspace-assay-type"
+                            checked={
+                              getWorkspaceAssayType(activeWorkspace.workspaceTags) === type
+                            }
+                            onChange={() => setWorkspaceAssayType(type, activeWorkspace)}
+                          />
+                          {ASSAY_TYPE_DISPLAY[type]}
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="space-y-1 max-h-64 overflow-y-auto">
@@ -489,6 +570,44 @@ export default function WorkspaceDashboard() {
               </div>
             </div>
           </>
+        ) : pendingWorkspace ? (
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium">Configure workspace</h2>
+            <p className="text-sm text-muted-foreground">{pendingWorkspace.name}</p>
+            <p className="text-xs text-muted-foreground">
+              Choose assay type. Free = all tasks and tabs; others limit to that assay only.
+            </p>
+            <div className="flex flex-col gap-2">
+              {WORKSPACE_ASSAY_TYPES.map((type) => (
+                <label
+                  key={type}
+                  className="flex items-center gap-2 py-1 text-sm cursor-pointer hover:bg-accent/50 rounded px-2"
+                >
+                  <input
+                    type="radio"
+                    name="pending-assay-type"
+                    checked={pendingWorkspaceAssayType === type}
+                    onChange={() => setPendingWorkspaceAssayType(type)}
+                  />
+                  {ASSAY_TYPE_DISPLAY[type]}
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleConfirmPendingWorkspace}>
+                Create workspace
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setPendingWorkspace(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         ) : (
           <>
             <div className="flex items-center justify-between">
@@ -509,7 +628,12 @@ export default function WorkspaceDashboard() {
                   const pathExists = pathExistsByWorkspaceId[ws.id] ?? true;
                   return (
                     <div key={ws.id} className="border rounded-lg p-4 flex flex-col gap-3">
-                      <p className="font-medium">{ws.name}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-medium">{ws.name}</p>
+                        <span className="shrink-0 px-2 py-0.5 rounded text-xs border bg-primary/10">
+                          {ASSAY_TYPE_DISPLAY[getWorkspaceAssayType(ws.workspaceTags)]}
+                        </span>
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {ws.positions.length} position{ws.positions.length !== 1 ? "s" : ""}
                       </p>

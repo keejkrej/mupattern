@@ -29,17 +29,18 @@ export function KillTaskConfigModal({
   onCreate,
 }: KillTaskConfigModalProps) {
   const rootPath = workspace.rootPath ?? "";
-  const defaultOutput = rootPath ? `${rootPath.replace(/\/$/, "")}/predictions.csv` : "";
+  const getDefaultOutput = (posVal: string) =>
+    rootPath ? `${rootPath.replace(/\/$/, "")}/Pos${posVal}_predictions.csv` : "";
 
   const [positions, setPositions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [pos, setPos] = useState<string>("000");
   const [modelPath, setModelPath] = useState("");
-  const [output, setOutput] = useState(defaultOutput);
+  const [output, setOutput] = useState(getDefaultOutput("000"));
 
   useEffect(() => {
-    if (open) setOutput(defaultOutput);
-  }, [open, defaultOutput]);
+    if (open) setOutput(getDefaultOutput(pos));
+  }, [open, pos, rootPath]);
 
   useEffect(() => {
     if (!open || !rootPath) return;
@@ -50,7 +51,9 @@ export function KillTaskConfigModal({
         if (cancelled) return;
         setPositions(idx.positions);
         if (idx.positions.length > 0) {
-          setPos(idx.positions[0]);
+          const firstPos = idx.positions[0];
+          setPos(firstPos);
+          setOutput(rootPath ? `${rootPath.replace(/\/$/, "")}/Pos${firstPos}_predictions.csv` : "");
         }
       })
       .finally(() => {
@@ -67,9 +70,9 @@ export function KillTaskConfigModal({
   }, []);
 
   const handleBrowseOutput = useCallback(async () => {
-    const result = await window.mupatternDesktop.tasks.pickExpressionOutput();
+    const result = await window.mupatternDesktop.tasks.pickExpressionOutput(output);
     if (result) setOutput(result.path);
-  }, []);
+  }, [output]);
 
   const handleCreate = useCallback(() => {
     onCreate({
@@ -104,7 +107,11 @@ export function KillTaskConfigModal({
                 <select
                   className="w-full border rounded px-3 py-2 bg-background text-sm"
                   value={pos}
-                  onChange={(e) => setPos(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPos(next);
+                    setOutput(getDefaultOutput(next));
+                  }}
                 >
                   {positions.map((p) => (
                     <option key={p} value={p}>
@@ -136,7 +143,7 @@ export function KillTaskConfigModal({
                     className="flex-1 border rounded px-3 py-2 bg-background text-sm"
                     value={output}
                     onChange={(e) => setOutput(e.target.value)}
-                    placeholder="predictions.csv"
+                    placeholder="Pos000_predictions.csv"
                   />
                   <Button variant="outline" size="sm" onClick={handleBrowseOutput}>
                     Browse

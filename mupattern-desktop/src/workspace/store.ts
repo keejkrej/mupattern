@@ -1,5 +1,6 @@
 import { Store } from "@tanstack/store";
 import { parseSliceStringOverValues } from "@/lib/slices";
+import { ASSAY_TAGS, type WorkspaceAssayType } from "@/lib/workspace-tags";
 
 /** Single workspace backed by a parent folder with Pos{N}/ subdirectories. */
 export interface PositionTag {
@@ -16,6 +17,7 @@ export interface Workspace {
   positions: number[];
   posTags: PositionTag[];
   positionFilterLabels: string[];
+  workspaceTags: string[];
   channels: number[];
   times: number[];
   zSlices: number[];
@@ -110,12 +112,23 @@ function normalizeWorkspace(workspace: Workspace): Workspace {
     tagLabelSet.has(label),
   );
 
+  const workspaceTagsRaw = (workspace as unknown as Record<string, unknown>).workspaceTags;
+  const validTypes = new Set<WorkspaceAssayType>(["free", ...ASSAY_TAGS]);
+  const workspaceTags = (() => {
+    if (!Array.isArray(workspaceTagsRaw) || workspaceTagsRaw.length === 0) return [];
+    const first = String(workspaceTagsRaw[0] ?? "").trim();
+    if (first === "free" || !validTypes.has(first as WorkspaceAssayType)) return [];
+    if (ASSAY_TAGS.includes(first as (typeof ASSAY_TAGS)[number])) return [first];
+    return [];
+  })();
+
   return {
     ...workspace,
     rootPath,
     positions,
     posTags,
     positionFilterLabels,
+    workspaceTags,
     currentIndex: Math.max(0, Math.min(workspace.currentIndex, normalizedMaxIndex)),
   };
 }
@@ -361,6 +374,23 @@ export function clearPositionTagFilters(workspaceId: string) {
     ...s,
     workspaces: s.workspaces.map((w) =>
       w.id === workspaceId ? { ...w, positionFilterLabels: [] } : w,
+    ),
+  }));
+}
+
+export function setWorkspaceTags(workspaceId: string, tags: string[]) {
+  const first = tags.find((t) => {
+    const v = String(t ?? "").trim();
+    return v === "free" || ASSAY_TAGS.includes(v as (typeof ASSAY_TAGS)[number]);
+  });
+  const next: string[] =
+    first && String(first).trim() !== "free"
+      ? [String(first).trim()]
+      : [];
+  workspaceStore.setState((s) => ({
+    ...s,
+    workspaces: s.workspaces.map((w) =>
+      w.id === workspaceId ? { ...w, workspaceTags: next } : w,
     ),
   }));
 }
