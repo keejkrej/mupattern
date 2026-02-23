@@ -2,8 +2,8 @@ import { Button, HexBackground, ThemeToggle, useTheme } from "@mupattern/shared"
 import { Link } from "react-router-dom";
 import { Download } from "lucide-react";
 
-const MUPATTERN_CROP_WINDOWS_URL =
-  "https://github.com/SoftmatterLMU-RaedlerGroup/mupattern/releases/latest/download/mupattern-crop-windows-x86_64.exe";
+const MUPATTERN_WINDOWS_URL =
+  "https://github.com/SoftmatterLMU-RaedlerGroup/mupattern/releases/latest/download/mupattern-windows-x86_64.exe";
 const REQUIRED_TIFF_PATTERN = "img_channel{c}_position{p}_time{t}_z{z}.tif";
 
 export default function DownloadPage() {
@@ -21,16 +21,16 @@ export default function DownloadPage() {
         <section className="border rounded-lg p-5 md:p-6 bg-background/80 backdrop-blur-sm space-y-5">
           <div className="space-y-3">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Download mupattern-crop
+              Download mupattern
             </p>
             <p className="text-sm text-muted-foreground max-w-3xl">
-              `mupattern-crop` is a Windows command-line tool that takes one position folder and
-              one Register bbox CSV and writes crop arrays into `crops.zarr`.
+              `mupattern` is a command-line tool (convert, crop, expression, kill, movie, spot, tissue).
+              For the web workflow, use the `crop` subcommand with one position folder and one Register bbox CSV.
             </p>
-            <a href={MUPATTERN_CROP_WINDOWS_URL} target="_blank" rel="noopener noreferrer">
+            <a href={MUPATTERN_WINDOWS_URL} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" className="gap-2">
                 <Download className="size-4" />
-                Download mupattern-crop.exe
+                Download mupattern.exe
               </Button>
             </a>
           </div>
@@ -39,40 +39,43 @@ export default function DownloadPage() {
 
           <div className="space-y-3">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Input requirements
+              Convert (ND2 → TIFF)
             </p>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
-              <li>
-                Input folder (for example{" "}
-                <span className="font-mono text-foreground">C:\data</span>) must contain position
-                folders named <span className="font-mono text-foreground">{"Pos{id}"}</span>{" "}
-                (example: `Pos150`, `Pos151`) directly at the top level.
-              </li>
-              <li>
-                TIFF files inside each position folder must match{" "}
-                <span className="font-mono text-foreground">{REQUIRED_TIFF_PATTERN}</span>.
-              </li>
-              <li>
-                BBox CSV must come from Register `Save` output and include columns: `crop,x,y,w,h`.
-              </li>
-            </ul>
+            <p className="text-sm text-muted-foreground max-w-3xl">
+              If you have Nikon ND2 files, convert them to TIFF folders first:
+            </p>
+            <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 text-xs text-foreground">
+              <code>
+                {`mupattern convert --input scan.nd2 --pos all --time all --output C:\\data --yes`}
+              </code>
+            </pre>
+            <p className="text-sm text-muted-foreground">
+              Use <span className="font-mono text-foreground">--pos</span> and{" "}
+              <span className="font-mono text-foreground">--time</span> to select positions/timepoints (e.g.{" "}
+              <span className="font-mono text-foreground">"0:5,10"</span>). Then continue with Register → Crop → See.
+            </p>
           </div>
 
           <div className="h-px bg-border" />
 
           <div className="space-y-3">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Usage</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              Crop ({"Pos{id}"} → crops.zarr)
+            </p>
             <p className="text-sm text-muted-foreground">
-              Run one command per position, using that position&apos;s bbox CSV.
+              Input folder (e.g. <span className="font-mono text-foreground">C:\data</span>) must contain{" "}
+              <span className="font-mono text-foreground">{"Pos{id}"}</span> folders with TIFFs matching{" "}
+              <span className="font-mono text-foreground">{REQUIRED_TIFF_PATTERN}</span>, and a Register bbox CSV with columns{" "}
+              <span className="font-mono text-foreground">crop,x,y,w,h</span>. Run one command per position:
             </p>
             <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 text-xs text-foreground">
               <code>
-                {`mupattern-crop.exe --input C:\\data --pos 150 --bbox C:\\data\\Pos150_bbox.csv --output C:\\data\\crops.zarr`}
+                {`mupattern crop --input C:\\data --pos 150 --bbox C:\\data\\Pos150_bbox.csv --output C:\\data\\crops.zarr`}
               </code>
             </pre>
             <p className="text-sm text-muted-foreground">
-              Repeat the command for each position (`--pos`) and bbox file. Output uses Zarr v3
-              layout: <span className="font-mono text-foreground">{"pos/{pos}/crop/{crop}"}</span>.
+              Repeat for each position. Output layout:{" "}
+              <span className="font-mono text-foreground">{"pos/{pos}/crop/{crop}"}</span>.
             </p>
           </div>
         </section>

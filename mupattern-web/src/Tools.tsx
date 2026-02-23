@@ -126,16 +126,19 @@ export default function Landing() {
             <div>
               <h2 className="text-xl font-medium">First-time workflow</h2>
               <p className="text-sm text-muted-foreground">
-                Register one TIFF per position, crop with `mupattern-crop`, then inspect in See.
+                Register one TIFF per position, crop with `mupattern crop`, then inspect in See.
               </p>
             </div>
           </div>
 
           <ol className="list-decimal pl-5 space-y-3 text-sm text-muted-foreground">
             <li>
-              Prepare <span className="font-mono text-foreground">C:\data</span> with{" "}
-              <span className="font-mono text-foreground">{"Pos{id}"}</span> subfolders directly
-              inside it, and TIFF names like{" "}
+              Prepare <span className="font-mono text-foreground">C:\data</span>. If you have ND2 files, run{" "}
+              <span className="font-mono text-foreground">mupattern convert</span> first (see{" "}
+              <Link to="/download" className="text-foreground underline underline-offset-2">
+                download
+              </Link>
+              ). Otherwise ensure <span className="font-mono text-foreground">{"Pos{id}"}</span> subfolders exist with TIFFs named{" "}
               <span className="font-mono text-foreground">{REQUIRED_TIFF_PATTERN}</span>.
             </li>
             <li>
