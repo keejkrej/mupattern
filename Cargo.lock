@@ -1229,7 +1229,7 @@ dependencies = [
 
 [[package]]
 name = "mupattern-rs"
-version = "0.1.0"
+version = "0.3.3"
 dependencies = [
  "cellpose-rs",
  "cellsam-rs",

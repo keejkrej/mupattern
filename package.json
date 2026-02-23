@@ -1,1 +1,10 @@
-{"private":true,"workspaces":["mupattern-desktop","mupattern-web","packages/shared"],"scripts":{"dev:desktop":"bun run --cwd mupattern-desktop dev","dev:web":"bun run --cwd mupattern-web dev","build:mupattern-rs":"cargo build --release --manifest-path mupattern-rs/Cargo.toml","export:kill-model":"uv run optimum-cli export onnx --model keejkrej/mupattern-resnet18 models/mupattern-resnet18","upload:kill-model":"uv run huggingface-cli upload keejkrej/mupattern-resnet18 models/mupattern-resnet18 --repo-type model"}}
+{
+  "private": true,
+  "workspaces": ["mupattern-desktop", "mupattern-web", "packages/shared"],
+  "scripts": {
+    "dev:desktop": "bun run --cwd mupattern-desktop dev",
+    "dev:web": "bun run --cwd mupattern-web dev",
+    "build:web": "bun run --cwd mupattern-web build",
+    "build:desktop": "bun run --cwd mupattern-desktop build && bun run --cwd mupattern-desktop pack"
+  }
+}

@@ -1,6 +1,6 @@
 [project]
 name = "mupattern"
-version = "0.1.0"
+version = "0.3.3"
 description = "Micropattern analysis tools"
 requires-python = ">=3.12"
 dependencies = ["mupattern-py"]

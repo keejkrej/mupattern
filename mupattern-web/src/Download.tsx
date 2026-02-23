@@ -2,7 +2,9 @@ import { Button, HexBackground, ThemeToggle, useTheme } from "@mupattern/shared"
 import { Link } from "react-router-dom";
 import { Download } from "lucide-react";
 
-const MUPATTERN_WINDOWS_URL =
+const MUPATTERN_DESKTOP_URL =
+  "https://github.com/SoftmatterLMU-RaedlerGroup/mupattern/releases/latest/download/mupattern-desktop-windows-x86_64.exe";
+const MUPATTERN_CLI_URL =
   "https://github.com/SoftmatterLMU-RaedlerGroup/mupattern/releases/latest/download/mupattern-windows-x86_64.exe";
 const REQUIRED_TIFF_PATTERN = "img_channel{c}_position{p}_time{t}_z{z}.tif";
 
@@ -21,16 +23,33 @@ export default function DownloadPage() {
         <section className="border rounded-lg p-5 md:p-6 bg-background/80 backdrop-blur-sm space-y-5">
           <div className="space-y-3">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Download mupattern
+              Desktop app (Electron)
             </p>
             <p className="text-sm text-muted-foreground max-w-3xl">
-              `mupattern` is a command-line tool (convert, crop, expression, kill, movie, spot, tissue).
-              For the web workflow, use the `crop` subcommand with one position folder and one Register bbox CSV.
+              Full workspace for multi-position datasets: convert, register, crop, expression, kill,
+              movie, tissue, spot. Windows installer is built via GitHub Actions on release.
             </p>
-            <a href={MUPATTERN_WINDOWS_URL} target="_blank" rel="noopener noreferrer">
+            <a href={MUPATTERN_DESKTOP_URL} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" className="gap-2">
                 <Download className="size-4" />
-                Download mupattern.exe
+                Download mupattern-desktop-windows-x86_64.exe
+              </Button>
+            </a>
+          </div>
+
+          <div className="h-px bg-border" />
+
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              CLI (mupattern)
+            </p>
+            <p className="text-sm text-muted-foreground max-w-3xl">
+              `mupattern` CLI (convert, crop, expression, kill, movie, spot, tissue). For the web workflow, use the `crop` subcommand.
+            </p>
+            <a href={MUPATTERN_CLI_URL} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" className="gap-2">
+                <Download className="size-4" />
+                Download mupattern-windows-x86_64.exe
               </Button>
             </a>
           </div>

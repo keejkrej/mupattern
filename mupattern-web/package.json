@@ -1,6 +1,6 @@
 {
   "name": "mupattern-web",
-  "version": "0.0.1",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "scripts": {

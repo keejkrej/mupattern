@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build-cli:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,9 +14,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build mupattern (CPU, no CUDA)
-        run: |
-          cargo build -p mupattern-rs --release --no-default-features
+      - name: Build mupattern
+        run: cargo build -p mupattern-rs --release
 
       - name: Rename to mupattern-windows-x86_64.exe
         run: |
@@ -29,7 +28,7 @@ jobs:
           path: mupattern-windows-x86_64.exe
 
   build-electron:
-    needs: build-windows
+    needs: build-cli
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,24 +50,17 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build desktop app
-        run: |
-          cd mupattern-desktop
-          bun run build
-
-      - name: Package Electron app
-        run: |
-          cd mupattern-desktop
-          bunx electron-builder
+      - name: Build and package desktop app
+        run: bun run build:desktop
 
       - name: Upload Electron installer
         uses: actions/upload-artifact@v4
         with:
           name: mupattern-desktop-windows
-          path: mupattern-desktop/release/*.exe
+          path: release/mupattern-desktop-windows-x86_64.exe
 
   release:
-    needs: [build-windows, build-electron]
+    needs: [build-cli, build-electron]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -91,6 +83,6 @@ jobs:
         with:
           files: |
             cli/mupattern-windows-x86_64.exe
-            desktop/*
+            desktop/mupattern-desktop-windows-x86_64.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

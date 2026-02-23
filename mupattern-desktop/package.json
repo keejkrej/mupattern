@@ -1,6 +1,6 @@
 {
   "name": "mupattern-desktop",
-  "version": "0.0.1",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "main": "electron-dist/main.cjs",
@@ -9,8 +9,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "tsc && vite build",
     "build": "bun run build:electron && bun run build:renderer",
-    "preview": "vite preview",
-    "start": "bun run build:electron && electron .",
+    "pack": "bunx electron-builder",
     "postinstall": "electron-rebuild -f"
   },
   "dependencies": {
@@ -55,8 +54,9 @@
     "wait-on": "^8.0.5"
   },
   "build": {
+    "artifactName": "mupattern-desktop-windows-x86_64.${ext}",
     "directories": {
-      "output": "release"
+      "output": "../release"
     },
     "files": [
       "dist/**/*",

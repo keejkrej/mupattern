@@ -9,6 +9,7 @@ dist/
 build/
 electron-dist/
 target/
+release/
 
 # Lockfiles (optional - can be committed)
 bun.lock

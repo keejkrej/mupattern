@@ -17,7 +17,7 @@ End-to-end pipeline for high-throughput single-cell analysis on micropatterns: k
 - [Rust](https://www.rust-lang.org/) — mupattern-rs and for building the desktop app
 - [uv](https://docs.astral.sh/uv/) — Python CLI (mupattern-py, requires Python 3.12+)
 
-Optional: [FFmpeg](https://ffmpeg.org/) (for movie export), Nikon ND2 or TIFF input data
+Optional: [FFmpeg](https://ffmpeg.org/) (for movie export), Nikon ND2 or TIFF input data. For GPU acceleration in ONNX Runtime (kill, tissue, spot): install [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.9 and [cuDNN](https://developer.nvidia.com/cudnn).
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ cd mupattern-desktop
 bunx electron-builder
 ```
 
-Output goes to `mupattern-desktop/release/`. The `mupattern` binary is bundled from `target/release/` into `resources/bin/`.
+Output goes to `release/` (at repo root). The `mupattern` binary is bundled from `target/release/` into `resources/bin/`.
 
 ## Python CLI
 
