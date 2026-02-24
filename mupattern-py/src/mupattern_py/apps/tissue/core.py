@@ -13,6 +13,10 @@ from ...common.io_zarr import open_zarr_group
 from ...common.progress import ProgressCallback
 
 
+def _shard_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    return (min(64, shape[0]), *shape[1:])
+
+
 def _segment_frame_peaks(
     fluo: np.ndarray,
     *,
@@ -89,12 +93,15 @@ def run_segment(
     for crop_idx, crop_id in enumerate(crop_ids):
         arr = crop_grp[crop_id]
         n_times, _, _, h, w = arr.shape
-        mask_arr = mask_crop_grp.zeros(
-            name=crop_id,
+        mask_shape = (n_times, h, w)
+        mask_arr = mask_crop_grp.create_array(
+            crop_id,
             shape=(n_times, h, w),
             chunks=(1, h, w),
+            shards=_shard_shape(mask_shape),
             dtype=np.uint32,
             overwrite=True,
+            fill_value=0,
         )
         mask_arr.attrs["axis_names"] = ["t", "y", "x"]
 
