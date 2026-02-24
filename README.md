@@ -62,6 +62,19 @@ Production workloads use mupattern-desktop with the Rust backend and ONNX.
 cargo run -p mupattern-rs --release -- --help
 ```
 
+## ONNX Models (Hugging Face)
+
+Pre-exported ONNX models are hosted on Hugging Face:
+
+| Model | Rust CLI module |
+|-------|-----------------|
+| [keejkrej/mupattern-resnet18](https://huggingface.co/keejkrej/mupattern-resnet18) | `kill` |
+| [keejkrej/spotiflow-onnx](https://huggingface.co/keejkrej/spotiflow-onnx) | `spot` |
+| [keejkrej/cellpose-cpsam-onnx](https://huggingface.co/keejkrej/cellpose-cpsam-onnx) | `tissue` (cellpose) |
+| [keejkrej/cellsam-onnx](https://huggingface.co/keejkrej/cellsam-onnx) | `tissue` (cellsam) |
+
+Please cite the original work when using these models in publications.
+
 ## Pipeline
 
 1. **Convert**: ND2 → TIFF folders
