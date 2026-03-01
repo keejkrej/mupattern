@@ -6,6 +6,7 @@ import { useStore } from "@tanstack/react-store";
 import { workspaceStore } from "@/workspace/store";
 import { getVisibleTabs, type ApplicationTab } from "@/lib/workspace-tags";
 import { ExpressionTab } from "./expression/ExpressionTab";
+import type { ExpressionTraceSeries, ExpressionTraceMetrics } from "./expression/types";
 import { ExpressionLeftSidebar } from "./expression/ExpressionLeftSidebar";
 import { KillTab } from "./kill/KillTab";
 import { KillLeftSidebar } from "./kill/KillLeftSidebar";
@@ -24,13 +25,9 @@ function getStoredTab(): ApplicationTab {
 export default function ApplicationApp() {
   const location = useLocation();
   const locationState = location.state as {
-    expressionRows?: Array<{
-      t: number;
-      crop: string;
-      intensity: number;
-      area: number;
-      background: number;
-    }>;
+    expressionSeries?: ExpressionTraceSeries[];
+    expressionMetrics?: ExpressionTraceMetrics[];
+    expressionDatasetId?: string | null;
     killRows?: Array<{ t: number; crop: string; label: boolean }>;
     tissueRows?: Array<{
       t: number;
@@ -41,7 +38,9 @@ export default function ApplicationApp() {
       background: number;
     }>;
   } | null;
-  const expressionRowsFromNav = locationState?.expressionRows ?? null;
+  const expressionSeriesFromNav = locationState?.expressionSeries ?? null;
+  const expressionMetricsFromNav = locationState?.expressionMetrics ?? null;
+  const expressionDatasetIdFromNav = locationState?.expressionDatasetId ?? null;
   const killRowsFromNav = locationState?.killRows ?? null;
   const tissueRowsFromNav = locationState?.tissueRows ?? null;
   const workspaces = useStore(workspaceStore, (s) => s.workspaces);
@@ -53,13 +52,15 @@ export default function ApplicationApp() {
     [activeWorkspace?.workspaceTags],
   );
 
-  const [expressionRows, setExpressionRows] = useState<Array<{
-    t: number;
-    crop: string;
-    intensity: number;
-    area: number;
-    background: number;
-  }> | null>(expressionRowsFromNav);
+  const [expressionSeries, setExpressionSeries] = useState<ExpressionTraceSeries[] | null>(
+    expressionSeriesFromNav,
+  );
+  const [expressionMetrics, setExpressionMetrics] = useState<ExpressionTraceMetrics[] | null>(
+    expressionMetricsFromNav,
+  );
+  const [expressionDatasetId, setExpressionDatasetId] = useState<string | null>(
+    expressionDatasetIdFromNav,
+  );
   const [selectedExpressionPath, setSelectedExpressionPath] = useState<string | null>(null);
 
   const [killRows, setKillRows] = useState<Array<{ t: number; crop: string; label: boolean }> | null>(
@@ -92,10 +93,19 @@ export default function ApplicationApp() {
   }, [activeTab, visibleTabs]);
 
   useEffect(() => {
-    if (expressionRowsFromNav) {
-      setExpressionRows(expressionRowsFromNav);
+    if (expressionSeriesFromNav) {
+      setExpressionSeries(expressionSeriesFromNav);
+      setExpressionMetrics(expressionMetricsFromNav);
+      setExpressionDatasetId(expressionDatasetIdFromNav);
     }
-  }, [expressionRowsFromNav]);
+  }, [expressionSeriesFromNav, expressionMetricsFromNav, expressionDatasetIdFromNav]);
+
+  useEffect(() => {
+    return () => {
+      if (!expressionDatasetId) return;
+      void window.mupatternDesktop.application.releaseExpressionDataset(expressionDatasetId);
+    };
+  }, [expressionDatasetId]);
 
   useEffect(() => {
     if (killRowsFromNav && killRowsFromNav.length > 0) {
@@ -139,10 +149,14 @@ export default function ApplicationApp() {
   const handleExpressionSelect = useCallback(
     (
       path: string,
-      rows: Array<{ t: number; crop: string; intensity: number; area: number; background: number }>,
+      series: ExpressionTraceSeries[],
+      metrics: ExpressionTraceMetrics[],
+      datasetId: string,
     ) => {
       setSelectedExpressionPath(path);
-      setExpressionRows(rows);
+      setExpressionSeries(series);
+      setExpressionMetrics(metrics);
+      setExpressionDatasetId(datasetId);
     },
     [],
   );
@@ -208,7 +222,12 @@ export default function ApplicationApp() {
                     onSelect={handleExpressionSelect}
                   />
                   <div className="flex-1 overflow-auto p-6">
-                    <ExpressionTab workspace={activeWorkspace} rows={expressionRows} />
+                    <ExpressionTab
+                      workspace={activeWorkspace}
+                      series={expressionSeries}
+                      metrics={expressionMetrics}
+                      datasetId={expressionDatasetId}
+                    />
                   </div>
                 </Tabs.Content>
               )}

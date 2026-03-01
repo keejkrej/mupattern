@@ -184,16 +184,36 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
       ipcRenderer.invoke("application:load-expression-csv", path) as Promise<
         | {
             ok: true;
-            rows: Array<{
-              t: number;
+            datasetId: string;
+            series: Array<{
               crop: string;
-              intensity: number;
-              area: number;
-              background: number;
+              t: number[];
+              intensity: number[];
             }>;
-          }
+            metrics: Array<{
+              crop: string;
+              rangeP90P10: number;
+              flatnessScore: number;
+              lagLogReturns: number[];
+              minLagLogReturn: number;
+            }>;
+        }
         | { ok: false; error: string }
       >,
+    filterExpression: (payload: {
+      datasetId: string;
+      hideFlat: boolean;
+      flatnessThreshold: number;
+      hideDrop: boolean;
+      logReturnThreshold: number;
+      minConsecutive: number;
+    }) =>
+      ipcRenderer.invoke("application:filter-expression", payload) as Promise<
+        | { ok: true; selectedCrops: string[]; totalCount: number; dropCount: number }
+        | { ok: false; error: string }
+      >,
+    releaseExpressionDataset: (datasetId: string) =>
+      ipcRenderer.invoke("application:release-expression-dataset", datasetId) as Promise<boolean>,
     listKillCsv: (workspacePath: string) =>
       ipcRenderer.invoke("application:list-kill-csv", workspacePath) as Promise<
         Array<{ posId: string; path: string }>

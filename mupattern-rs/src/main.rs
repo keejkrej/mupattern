@@ -3,6 +3,7 @@ mod crop;
 mod expression;
 mod kill;
 mod movie;
+mod rpc;
 mod slices;
 mod spot;
 mod tissue;
@@ -12,7 +13,10 @@ use clap::{Parser, Subcommand};
 use std::io::{self, Write};
 
 #[derive(Parser)]
-#[command(name = "mupattern", about = "mupattern CLI: crop, convert, expression, kill, movie, spot, tissue")]
+#[command(
+    name = "mupattern",
+    about = "mupattern CLI: crop, convert, expression, kill, movie, spot, tissue"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -23,6 +27,7 @@ enum Commands {
     Convert(convert::ConvertArgs),
     Crop(crop::CropArgs),
     Expression(expression::ExpressionArgs),
+    RpcServer(rpc::RpcServerArgs),
     Kill(kill::KillArgs),
     Movie(movie::MovieArgs),
     Spot(spot::SpotArgs),
@@ -44,6 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Convert(args) => convert::run(args, progress)?,
         Commands::Crop(args) => crop::run(args, progress)?,
         Commands::Expression(args) => expression::run(args, progress)?,
+        Commands::RpcServer(args) => rpc::run(args)?,
         Commands::Kill(args) => kill::run(args, progress)?,
         Commands::Movie(args) => movie::run(args, progress)?,
         Commands::Spot(args) => spot::run(args, progress)?,

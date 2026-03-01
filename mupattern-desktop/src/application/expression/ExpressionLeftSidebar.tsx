@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Workspace } from "@/workspace/store";
+import type { ExpressionTraceSeries, ExpressionTraceMetrics } from "./types";
 
 export interface ExpressionCsvFile {
   posId: string;
@@ -11,7 +12,9 @@ interface ExpressionLeftSidebarProps {
   selectedPath: string | null;
   onSelect: (
     path: string,
-    rows: Array<{ t: number; crop: string; intensity: number; area: number; background: number }>,
+    series: ExpressionTraceSeries[],
+    metrics: ExpressionTraceMetrics[],
+    datasetId: string,
   ) => void;
 }
 
@@ -23,6 +26,7 @@ export function ExpressionLeftSidebar({
   const rootPath = workspace.rootPath ?? "";
   const [files, setFiles] = useState<ExpressionCsvFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!rootPath) {
@@ -36,6 +40,7 @@ export function ExpressionLeftSidebar({
       .then((list) => {
         if (cancelled) return;
         setFiles(list);
+        setError(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -50,7 +55,12 @@ export function ExpressionLeftSidebar({
     if (files.length === 0 || selectedPath) return;
     const first = files[0];
     window.mupatternDesktop.application.loadExpressionCsv(first.path).then((result) => {
-      if (result.ok) onSelect(first.path, result.rows);
+      if (result.ok) {
+        setError(null);
+        onSelect(first.path, result.series, result.metrics, result.datasetId);
+      } else {
+        setError(result.error);
+      }
     });
   }, [files, selectedPath, onSelect]);
 
@@ -61,7 +71,10 @@ export function ExpressionLeftSidebar({
       if (!file) return;
       const result = await window.mupatternDesktop.application.loadExpressionCsv(file.path);
       if (result.ok) {
-        onSelect(file.path, result.rows);
+        setError(null);
+        onSelect(file.path, result.series, result.metrics, result.datasetId);
+      } else {
+        setError(result.error);
       }
     },
     [files, onSelect],
@@ -98,6 +111,8 @@ export function ExpressionLeftSidebar({
           ))}
         </select>
       </div>
+
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </aside>
   );
 }

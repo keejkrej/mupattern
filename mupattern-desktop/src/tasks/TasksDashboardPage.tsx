@@ -5,6 +5,7 @@ import { AppHeader, Button } from "@mupattern/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { workspaceStore } from "@/workspace/store";
 import { getVisibleTaskKinds } from "@/lib/workspace-tags";
+import type { ExpressionTraceSeries, ExpressionTraceMetrics } from "@/application/expression/types";
 import { CropTaskConfigModal } from "@/tasks/components/CropTaskConfigModal";
 import { ConvertTaskConfigModal } from "@/tasks/components/ConvertTaskConfigModal";
 import { MovieTaskConfigModal } from "@/tasks/components/MovieTaskConfigModal";
@@ -21,10 +22,11 @@ interface TaskRecord {
   finished_at: string | null;
   request: Record<string, unknown>;
   result:
-    | {
+      | {
         output?: string;
+        datasetId?: string;
+        series?: ExpressionTraceSeries[];
         rows?:
-          | Array<{ t: number; crop: string; intensity: number; area: number; background: number }>
           | Array<{ t: number; crop: string; label: boolean }>
           | Array<{
               t: number;
@@ -34,6 +36,7 @@ interface TaskRecord {
               cell_area: number;
               background: number;
             }>;
+        metrics?: ExpressionTraceMetrics[];
       }
     | Record<string, unknown>
     | null;
@@ -257,7 +260,14 @@ export default function TasksDashboardPage() {
               status: result.ok ? "succeeded" : "failed",
               finished_at: new Date().toISOString(),
               error: result.ok ? null : result.error,
-              result: result.ok ? { output: result.output, rows: result.rows } : null,
+              result: result.ok
+                ? {
+                    output: result.output,
+                    datasetId: result.datasetId,
+                    series: result.series,
+                    metrics: result.metrics,
+                  }
+                : null,
             };
           }),
         );
@@ -826,18 +836,35 @@ export default function TasksDashboardPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
+                                onClick={async () => {
                                   const r = task.result as {
-                                    rows?: Array<{
-                                      t: number;
-                                      crop: string;
-                                      intensity: number;
-                                      area: number;
-                                      background: number;
-                                    }>;
+                                    output?: string;
+                                    datasetId?: string;
+                                    series?: ExpressionTraceSeries[];
+                                    metrics?: ExpressionTraceMetrics[];
                                   } | null;
+                                  if (r?.output) {
+                                    const loaded =
+                                      await window.mupatternDesktop.application.loadExpressionCsv(
+                                        r.output,
+                                      );
+                                    if (loaded.ok) {
+                                      navigate("/application", {
+                                        state: {
+                                          expressionDatasetId: loaded.datasetId,
+                                          expressionSeries: loaded.series,
+                                          expressionMetrics: loaded.metrics,
+                                        },
+                                      });
+                                      return;
+                                    }
+                                  }
                                   navigate("/application", {
-                                    state: { expressionRows: r?.rows ?? null },
+                                    state: {
+                                      expressionDatasetId: r?.datasetId ?? null,
+                                      expressionSeries: r?.series ?? null,
+                                      expressionMetrics: r?.metrics ?? null,
+                                    },
                                   });
                                 }}
                               >

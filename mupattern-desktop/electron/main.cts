@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import {
   access,
@@ -21,6 +21,8 @@ const DEV_SERVER_URL = "http://localhost:5173";
 const WORKSPACE_DB_FILENAME = "mupattern-desktop.sqlite";
 const WORKSPACE_STATE_KEY = "workspace-state";
 const TIFF_RE = /^img_channel(\d+)_position(\d+)_time(\d+)_z(\d+)\.tif$/i;
+const EXPRESSION_BACKEND_UNAVAILABLE_ERROR = "Expression backend unavailable";
+const EXPRESSION_RPC_REQUEST_TIMEOUT_MS = 60_000;
 
 interface WorkspaceScanResult {
   path: string;
@@ -166,12 +168,18 @@ interface HasMasksResponse {
   hasMasks: boolean;
 }
 
-interface ExpressionAnalyzeRow {
-  t: number;
+interface ExpressionTraceSeries {
   crop: string;
-  intensity: number;
-  area: number;
-  background: number;
+  t: number[];
+  intensity: number[];
+}
+
+interface ExpressionTraceMetrics {
+  crop: string;
+  rangeP90P10: number;
+  flatnessScore: number;
+  lagLogReturns: number[];
+  minLagLogReturn: number;
 }
 
 interface RunExpressionAnalyzeRequest {
@@ -185,7 +193,9 @@ interface RunExpressionAnalyzeRequest {
 interface RunExpressionAnalyzeSuccess {
   ok: true;
   output: string;
-  rows: ExpressionAnalyzeRow[];
+  series: ExpressionTraceSeries[];
+  metrics: ExpressionTraceMetrics[];
+  datasetId: string;
 }
 
 interface RunExpressionAnalyzeFailure {
@@ -194,6 +204,15 @@ interface RunExpressionAnalyzeFailure {
 }
 
 type RunExpressionAnalyzeResponse = RunExpressionAnalyzeSuccess | RunExpressionAnalyzeFailure;
+
+interface FilterExpressionRequest {
+  datasetId: string;
+  hideFlat: boolean;
+  flatnessThreshold: number;
+  hideDrop: boolean;
+  logReturnThreshold: number;
+  minConsecutive: number;
+}
 
 interface RunKillPredictRequest {
   taskId: string;
@@ -296,6 +315,193 @@ let fsStoreCtorPromise: Promise<typeof FileSystemStore> | null = null;
 const zarrContextByWorkspacePath = new Map<string, ZarrContext>();
 /** Keyed by absolute masks zarr path (user picks via Load). */
 const masksContextByMasksPath = new Map<string, ZarrContext>();
+const activeExpressionDatasetIds = new Set<string>();
+
+interface ExpressionLoadCsvRpcResult {
+  datasetId: string;
+  series: ExpressionTraceSeries[];
+  metrics: ExpressionTraceMetrics[];
+}
+
+interface ExpressionFilterRpcResult {
+  selectedCrops: string[];
+  totalCount: number;
+  dropCount: number;
+}
+
+interface RpcPendingRequest {
+  method: string;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+  timeout: NodeJS.Timeout;
+}
+
+class ExpressionRpcClient {
+  private process: ChildProcessWithoutNullStreams | null = null;
+  private available = false;
+  private requestId = 1;
+  private stdoutBuffer = "";
+  private pending = new Map<number, RpcPendingRequest>();
+
+  isAvailable(): boolean {
+    return this.available && this.process != null && !this.process.killed;
+  }
+
+  async start(): Promise<void> {
+    if (this.isAvailable()) return;
+
+    const binPath = getMupatternBinPath();
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(binPath, ["rpc-server"], { stdio: ["pipe", "pipe", "pipe"] });
+      let settled = false;
+
+      const fail = (reason: unknown) => {
+        this.available = false;
+        this.process = null;
+        this.rejectAllPending(reason instanceof Error ? reason.message : String(reason));
+        if (!settled) {
+          settled = true;
+          reject(reason);
+        }
+      };
+
+      proc.on("error", (err) => fail(err));
+      proc.on("close", (code, signal) => {
+        const message = `Expression RPC server exited (code=${code ?? "null"}, signal=${signal ?? "null"})`;
+        fail(new Error(message));
+      });
+      proc.stderr.on("data", (chunk: Buffer) => {
+        const message = chunk.toString("utf8").trim();
+        if (message) console.error(`[expression-rpc] ${message}`);
+      });
+      proc.stdout.on("data", (chunk: Buffer) => this.handleStdout(chunk.toString("utf8")));
+
+      this.process = proc;
+      this.available = true;
+
+      this.call<{ ok: boolean }>("server.ping", {})
+        .then(() => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        })
+        .catch((err) => {
+          if (!proc.killed) proc.kill();
+          fail(err);
+        });
+    });
+  }
+
+  async stop(): Promise<void> {
+    const proc = this.process;
+    if (!proc) return;
+
+    if (this.available) {
+      try {
+        await this.call("server.shutdown", {});
+      } catch {
+        // best effort on shutdown
+      }
+    }
+
+    this.available = false;
+    this.process = null;
+    this.rejectAllPending(EXPRESSION_BACKEND_UNAVAILABLE_ERROR);
+
+    if (proc.killed) return;
+
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      proc.once("close", done);
+      setTimeout(() => {
+        if (!proc.killed) proc.kill();
+        resolve();
+      }, 1_000);
+    });
+  }
+
+  async call<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    const proc = this.process;
+    if (!this.available || !proc) {
+      throw new Error(EXPRESSION_BACKEND_UNAVAILABLE_ERROR);
+    }
+
+    const id = this.requestId++;
+    const payload = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
+
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Expression RPC timeout for ${method}`));
+      }, EXPRESSION_RPC_REQUEST_TIMEOUT_MS);
+
+      this.pending.set(id, {
+        method,
+        resolve: (value) => resolve(value as T),
+        reject,
+        timeout,
+      });
+      proc.stdin.write(payload, (err) => {
+        if (!err) return;
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        reject(err);
+      });
+    });
+  }
+
+  private handleStdout(chunk: string): void {
+    this.stdoutBuffer += chunk;
+    while (true) {
+      const idx = this.stdoutBuffer.indexOf("\n");
+      if (idx < 0) break;
+      const line = this.stdoutBuffer.slice(0, idx).trim();
+      this.stdoutBuffer = this.stdoutBuffer.slice(idx + 1);
+      if (!line) continue;
+      this.handleResponseLine(line);
+    }
+  }
+
+  private handleResponseLine(line: string): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (parsed == null || typeof parsed !== "object") return;
+
+    const obj = parsed as {
+      id?: unknown;
+      result?: unknown;
+      error?: { code?: number; message?: string };
+    };
+    const id = typeof obj.id === "number" && Number.isInteger(obj.id) ? obj.id : null;
+    if (id == null) return;
+
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    this.pending.delete(id);
+
+    if (obj.error && typeof obj.error === "object") {
+      pending.reject(new Error(obj.error.message ?? `Expression RPC error (${pending.method})`));
+      return;
+    }
+    pending.resolve(obj.result);
+  }
+
+  private rejectAllPending(reason: string): void {
+    for (const [, pending] of this.pending) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(reason));
+    }
+    this.pending.clear();
+  }
+}
+
+const expressionRpcClient = new ExpressionRpcClient();
 
 function getWorkspaceDbPath(): string {
   return path.join(app.getPath("userData"), WORKSPACE_DB_FILENAME);
@@ -382,30 +588,6 @@ async function parseKillCsv(csvPath: string): Promise<KillPredictRow[]> {
   }
 }
 
-async function parseExpressionCsv(csvPath: string): Promise<ExpressionAnalyzeRow[]> {
-  try {
-    const content = await readFile(csvPath, "utf8");
-    const lines = content.trim().split("\n");
-    if (lines.length < 2) return [];
-    const rows: ExpressionAnalyzeRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split(",");
-      if (parts.length >= 5) {
-        rows.push({
-          t: Number.parseInt(parts[0], 10),
-          crop: parts[1].trim(),
-          intensity: Number.parseInt(parts[2], 10),
-          area: Number.parseInt(parts[3], 10),
-          background: Number.parseFloat(parts[4]),
-        });
-      }
-    }
-    return rows;
-  } catch {
-    return [];
-  }
-}
-
 async function parseTissueCsv(csvPath: string): Promise<TissueAnalyzeRow[]> {
   try {
     const content = await readFile(csvPath, "utf8");
@@ -428,6 +610,76 @@ async function parseTissueCsv(csvPath: string): Promise<TissueAnalyzeRow[]> {
     return rows;
   } catch {
     return [];
+  }
+}
+
+function normalizeExpressionRpcSeries(series: ExpressionTraceSeries[]): ExpressionTraceSeries[] {
+  return series.map((trace) => ({
+    crop: trace.crop,
+    t: trace.t.map((v) => Number(v)),
+    intensity: trace.intensity.map((v) => Number(v)),
+  }));
+}
+
+async function loadExpressionDatasetViaRpc(csvPath: string): Promise<ExpressionLoadCsvRpcResult> {
+  if (!expressionRpcClient.isAvailable()) {
+    throw new Error(EXPRESSION_BACKEND_UNAVAILABLE_ERROR);
+  }
+  const result = await expressionRpcClient.call<ExpressionLoadCsvRpcResult>("expression.loadCsv", {
+    csvPath,
+  });
+  if (!result || typeof result !== "object") {
+    throw new Error("Invalid expression.loadCsv response");
+  }
+  if (!Array.isArray(result.series) || !Array.isArray(result.metrics)) {
+    throw new Error("Malformed expression.loadCsv payload");
+  }
+  if (typeof result.datasetId !== "string" || !result.datasetId) {
+    throw new Error("Missing datasetId from expression.loadCsv");
+  }
+
+  activeExpressionDatasetIds.add(result.datasetId);
+  return {
+    datasetId: result.datasetId,
+    series: normalizeExpressionRpcSeries(result.series),
+    metrics: result.metrics,
+  };
+}
+
+async function filterExpressionDatasetViaRpc(
+  payload: FilterExpressionRequest,
+): Promise<ExpressionFilterRpcResult> {
+  if (!expressionRpcClient.isAvailable()) {
+    throw new Error(EXPRESSION_BACKEND_UNAVAILABLE_ERROR);
+  }
+  const result = await expressionRpcClient.call<ExpressionFilterRpcResult>("expression.filter", {
+    datasetId: payload.datasetId,
+    hideFlat: payload.hideFlat,
+    flatnessThreshold: payload.flatnessThreshold,
+    hideDrop: payload.hideDrop,
+    logReturnThreshold: payload.logReturnThreshold,
+    minConsecutive: payload.minConsecutive,
+  });
+  if (!result || typeof result !== "object") {
+    throw new Error("Invalid expression.filter response");
+  }
+  return {
+    selectedCrops: Array.isArray(result.selectedCrops)
+      ? result.selectedCrops.map((crop) => String(crop))
+      : [],
+    totalCount: Number(result.totalCount ?? 0),
+    dropCount: Number(result.dropCount ?? 0),
+  };
+}
+
+async function releaseExpressionDatasetViaRpc(datasetId: string): Promise<void> {
+  if (!datasetId) return;
+  activeExpressionDatasetIds.delete(datasetId);
+  if (!expressionRpcClient.isAvailable()) return;
+  try {
+    await expressionRpcClient.call("expression.release", { datasetId });
+  } catch {
+    // best effort
   }
 }
 
@@ -1341,13 +1593,58 @@ function registerWorkspaceStateIpc(): void {
     async (
       _event,
       csvPath: string,
-    ): Promise<{ ok: true; rows: ExpressionAnalyzeRow[] } | { ok: false; error: string }> => {
+    ): Promise<
+      | {
+          ok: true;
+          datasetId: string;
+          series: ExpressionTraceSeries[];
+          metrics: ExpressionTraceMetrics[];
+        }
+      | { ok: false; error: string }
+    > => {
+      if (!expressionRpcClient.isAvailable()) {
+        return { ok: false, error: EXPRESSION_BACKEND_UNAVAILABLE_ERROR };
+      }
       try {
-        const rows = await parseExpressionCsv(csvPath);
-        return { ok: true, rows };
+        const { datasetId, series, metrics } = await loadExpressionDatasetViaRpc(csvPath);
+        return { ok: true, datasetId, series, metrics };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
+    },
+  );
+
+  ipcMain.handle(
+    "application:filter-expression",
+    async (
+      _event,
+      payload: FilterExpressionRequest,
+    ): Promise<
+      | { ok: true; selectedCrops: string[]; totalCount: number; dropCount: number }
+      | { ok: false; error: string }
+    > => {
+      if (!expressionRpcClient.isAvailable()) {
+        return { ok: false, error: EXPRESSION_BACKEND_UNAVAILABLE_ERROR };
+      }
+      try {
+        const result = await filterExpressionDatasetViaRpc(payload);
+        return {
+          ok: true,
+          selectedCrops: result.selectedCrops,
+          totalCount: result.totalCount,
+          dropCount: result.dropCount,
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "application:release-expression-dataset",
+    async (_event, datasetId: string): Promise<boolean> => {
+      await releaseExpressionDatasetViaRpc(datasetId);
+      return true;
     },
   );
 
@@ -1493,6 +1790,16 @@ function registerWorkspaceStateIpc(): void {
       payload: RunExpressionAnalyzeRequest,
     ): Promise<RunExpressionAnalyzeResponse> => {
       const progressEvents: Array<{ progress: number; message: string; timestamp: string }> = [];
+      if (!expressionRpcClient.isAvailable()) {
+        const error = EXPRESSION_BACKEND_UNAVAILABLE_ERROR;
+        await updateTask(payload.taskId, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error,
+          progress_events: progressEvents,
+        });
+        return { ok: false, error };
+      }
       const sendProgress = (progress: number, message: string) => {
         progressEvents.push({
           progress,
@@ -1527,15 +1834,42 @@ function registerWorkspaceStateIpc(): void {
         });
         return result;
       }
-      const rows = await parseExpressionCsv(payload.output);
+      if (!expressionRpcClient.isAvailable()) {
+        const error = EXPRESSION_BACKEND_UNAVAILABLE_ERROR;
+        await updateTask(payload.taskId, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error,
+          progress_events: progressEvents,
+        });
+        return { ok: false, error };
+      }
+      let datasetId = "";
+      let series: ExpressionTraceSeries[] = [];
+      let metrics: ExpressionTraceMetrics[] = [];
+      try {
+        const loaded = await loadExpressionDatasetViaRpc(payload.output);
+        datasetId = loaded.datasetId;
+        series = loaded.series;
+        metrics = loaded.metrics;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await updateTask(payload.taskId, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          error,
+          progress_events: progressEvents,
+        });
+        return { ok: false, error };
+      }
       await updateTask(payload.taskId, {
         status: "succeeded",
         finished_at: new Date().toISOString(),
         error: null,
-        result: { output: payload.output, rows },
+        result: { output: payload.output, datasetId, series, metrics },
         progress_events: progressEvents,
       });
-      return { ok: true, output: payload.output, rows };
+      return { ok: true, output: payload.output, datasetId, series, metrics };
     },
   );
 
@@ -1801,7 +2135,30 @@ function createWindow(): void {
   win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 }
 
-app.whenReady().then(() => {
+let expressionBackendStopping = false;
+
+async function stopExpressionBackend(): Promise<void> {
+  if (expressionBackendStopping) return;
+  expressionBackendStopping = true;
+  try {
+    const datasetIds = [...activeExpressionDatasetIds];
+    for (const datasetId of datasetIds) {
+      await releaseExpressionDatasetViaRpc(datasetId);
+    }
+    await expressionRpcClient.stop();
+  } finally {
+    expressionBackendStopping = false;
+  }
+}
+
+app.whenReady().then(async () => {
+  try {
+    await expressionRpcClient.start();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Expression backend failed to start: ${message}`);
+  }
+
   registerWorkspaceStateIpc();
   createWindow();
 
@@ -1812,11 +2169,16 @@ app.whenReady().then(() => {
   });
 });
 
+app.on("before-quit", () => {
+  void stopExpressionBackend();
+});
+
 app.on("window-all-closed", () => {
   if (workspaceDb) {
     workspaceDb.close();
     workspaceDb = null;
   }
+  void stopExpressionBackend();
   if (process.platform !== "darwin") {
     app.quit();
   }

@@ -195,12 +195,18 @@ declare global {
           | {
               ok: true;
               output: string;
-              rows: Array<{
-                t: number;
+              datasetId: string;
+              series: Array<{
                 crop: string;
-                intensity: number;
-                area: number;
-                background: number;
+                t: number[];
+                intensity: number[];
+              }>;
+              metrics: Array<{
+                crop: string;
+                rangeP90P10: number;
+                flatnessScore: number;
+                lagLogReturns: number[];
+                minLagLogReturn: number;
               }>;
             }
           | { ok: false; error: string }
@@ -276,16 +282,34 @@ declare global {
         loadExpressionCsv: (path: string) => Promise<
           | {
               ok: true;
-              rows: Array<{
-                t: number;
+              datasetId: string;
+              series: Array<{
                 crop: string;
-                intensity: number;
-                area: number;
-                background: number;
+                t: number[];
+                intensity: number[];
+              }>;
+              metrics: Array<{
+                crop: string;
+                rangeP90P10: number;
+                flatnessScore: number;
+                lagLogReturns: number[];
+                minLagLogReturn: number;
               }>;
             }
           | { ok: false; error: string }
         >;
+        filterExpression: (payload: {
+          datasetId: string;
+          hideFlat: boolean;
+          flatnessThreshold: number;
+          hideDrop: boolean;
+          logReturnThreshold: number;
+          minConsecutive: number;
+        }) => Promise<
+          | { ok: true; selectedCrops: string[]; totalCount: number; dropCount: number }
+          | { ok: false; error: string }
+        >;
+        releaseExpressionDataset: (datasetId: string) => Promise<boolean>;
         listKillCsv: (workspacePath: string) => Promise<
           Array<{ posId: string; path: string }>
         >;
