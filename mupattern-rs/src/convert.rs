@@ -51,7 +51,10 @@ pub fn run(
 
     let total = pos_indices.len() * time_indices.len() * n_chan * n_z;
 
-    eprintln!("ND2: {} positions, T={}, C={}, Z={}", n_pos, n_time, n_chan, n_z);
+    eprintln!(
+        "ND2: {} positions, T={}, C={}, Z={}",
+        n_pos, n_time, n_chan, n_z
+    );
     eprintln!();
     eprintln!(
         "Selected {}/{} positions, {}/{} timepoints, {} channels, {} z-slices",
@@ -65,7 +68,14 @@ pub fn run(
     eprintln!("Total frames to write: {}", total);
     eprintln!();
     eprintln!("Positions:");
-    eprintln!("  {}", pos_indices.iter().map(|i| format!("Pos{}", i)).collect::<Vec<_>>().join(", "));
+    eprintln!(
+        "  {}",
+        pos_indices
+            .iter()
+            .map(|i| format!("Pos{}", i))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     eprintln!();
     eprintln!("Timepoints (original indices):");
     eprintln!("  {:?}", time_indices);
@@ -115,7 +125,10 @@ pub fn run(
 
                     done += 1;
                     if total > 0 {
-                        progress(done as f64 / total as f64, &format!("Writing TIFFs {}/{}", done, total));
+                        progress(
+                            done as f64 / total as f64,
+                            &format!("Writing TIFFs {}/{}", done, total),
+                        );
                     }
                 }
             }

@@ -8,9 +8,9 @@
 //!   Write masks to masks.zarr.
 //!   Then analyze: per-cell total_fluorescence, cell_area, background → CSV.
 
-use clap::Args;
 use cellpose_rs::{CellposeSession, SegmentParams as CellposeParams};
 use cellsam_rs::{CellsamSession, SegmentParams as CellsamParams};
+use clap::Args;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -106,9 +106,9 @@ fn read_frame_f32(
 // ---------------------------------------------------------------------------
 
 fn ensure_mask_groups(store: &zarr::Store, pos_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::Arc;
     use zarrs::group::GroupBuilder;
     use zarrs::storage::ReadableWritableListableStorageTraits;
-    use std::sync::Arc;
 
     let st: Arc<dyn ReadableWritableListableStorageTraits> = store.clone();
     let root = GroupBuilder::new().build(st.clone(), "/")?;
@@ -142,7 +142,11 @@ fn run_segment(
     let mut crop_ids: Vec<String> = fs::read_dir(&crop_root)?
         .filter_map(|e| {
             let e = e.ok()?;
-            if e.file_type().ok()?.is_dir() { e.file_name().to_str().map(String::from) } else { None }
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().to_str().map(String::from)
+            } else {
+                None
+            }
         })
         .collect();
     crop_ids.sort();
@@ -160,22 +164,27 @@ fn run_segment(
             return Err(format!(
                 "Cellpose model not found at {}. Export with: python scripts/export_onnx.py",
                 model_file.display()
-            ).into());
+            )
+            .into());
         }
     } else if method == "cellsam" {
-        for name in ["image_encoder.onnx", "cellfinder.onnx", "mask_decoder.onnx", "image_pe.npy"] {
+        for name in [
+            "image_encoder.onnx",
+            "cellfinder.onnx",
+            "mask_decoder.onnx",
+            "image_pe.npy",
+        ] {
             if !model_dir.join(name).exists() {
                 return Err(format!(
                     "CellSAM model file not found: {}/{}",
                     model_dir.display(),
                     name
-                ).into());
+                )
+                .into());
             }
         }
     } else {
-        return Err(format!(
-            "Unknown method {method:?}. Use 'cellpose' or 'cellsam'."
-        ).into());
+        return Err(format!("Unknown method {method:?}. Use 'cellpose' or 'cellsam'.").into());
     }
 
     let crop_store = zarr::open_store(crops_zarr)?;
@@ -224,7 +233,13 @@ fn run_segment(
                 done += 1;
                 progress(
                     done as f64 / total_frames as f64 * 0.5,
-                    &format!("Segment crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
+                    &format!(
+                        "Segment crop {}/{}, frame {}/{}",
+                        ci + 1,
+                        n_crops,
+                        t + 1,
+                        n_t
+                    ),
                 );
             }
         }
@@ -260,7 +275,13 @@ fn run_segment(
                 done += 1;
                 progress(
                     done as f64 / total_frames as f64 * 0.5,
-                    &format!("Segment crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
+                    &format!(
+                        "Segment crop {}/{}, frame {}/{}",
+                        ci + 1,
+                        n_crops,
+                        t + 1,
+                        n_t
+                    ),
                 );
             }
         }
@@ -286,7 +307,11 @@ fn run_analyze(
     let mut crop_ids: Vec<String> = fs::read_dir(&crop_root)?
         .filter_map(|e| {
             let e = e.ok()?;
-            if e.file_type().ok()?.is_dir() { e.file_name().to_str().map(String::from) } else { None }
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().to_str().map(String::from)
+            } else {
+                None
+            }
         })
         .collect();
     crop_ids.sort();
@@ -335,7 +360,8 @@ fn run_analyze(
         let mask_arr = zarr::open_array(&mask_store, &mask_arr_path)?;
 
         for t in 0..n_t {
-            let fluo_raw = zarr::read_chunk_u16(&arr, &[t as u64, args.channel_fluorescence as u64, 0, 0, 0])?;
+            let fluo_raw =
+                zarr::read_chunk_u16(&arr, &[t as u64, args.channel_fluorescence as u64, 0, 0, 0])?;
             let masks = zarr::read_chunk_u16(&mask_arr, &[t as u64, 0, 0])?;
 
             let max_label = *masks.iter().max().unwrap_or(&0);
@@ -343,7 +369,13 @@ fn run_analyze(
                 done += 1;
                 progress(
                     0.5 + done as f64 / total_frames as f64 * 0.5,
-                    &format!("Analyze crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
+                    &format!(
+                        "Analyze crop {}/{}, frame {}/{}",
+                        ci + 1,
+                        n_crops,
+                        t + 1,
+                        n_t
+                    ),
                 );
                 continue;
             }
@@ -377,7 +409,13 @@ fn run_analyze(
             done += 1;
             progress(
                 0.5 + done as f64 / total_frames as f64 * 0.5,
-                &format!("Analyze crop {}/{}, frame {}/{}", ci + 1, n_crops, t + 1, n_t),
+                &format!(
+                    "Analyze crop {}/{}, frame {}/{}",
+                    ci + 1,
+                    n_crops,
+                    t + 1,
+                    n_t
+                ),
             );
         }
     }

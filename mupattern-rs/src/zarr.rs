@@ -2,9 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 use zarrs::array::{data_type, Array, ArrayBuilder};
 use zarrs::config::MetadataRetrieveVersion;
+use zarrs::filesystem::FilesystemStore;
 use zarrs::group::GroupBuilder;
 use zarrs::storage::ReadableWritableListableStorageTraits;
-use zarrs::filesystem::FilesystemStore;
 
 pub type Store = Arc<FilesystemStore>;
 

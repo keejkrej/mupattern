@@ -5,10 +5,10 @@
 use clap::Args;
 use image::{imageops::FilterType, GrayImage, ImageBuffer, Luma};
 use ndarray::{Array, ArrayViewD, Ix4};
+#[cfg(any(windows, target_os = "linux"))]
+use ort::ep::{ExecutionProvider, CUDA};
 use ort::session::Session;
 use ort::value::Tensor;
-#[cfg(any(windows, target_os = "linux"))]
-use ort::ep::{CUDA, ExecutionProvider};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -56,10 +56,10 @@ struct FrameIndex {
 /// Build ONNX session. Tries CUDA if use_cuda; on CUDA failure falls back to CPU.
 fn build_kill_session(
     model_path: &Path,
-    use_cuda: bool,
+    _use_cuda: bool,
 ) -> Result<Session, Box<dyn std::error::Error>> {
     #[cfg(any(windows, target_os = "linux"))]
-    if use_cuda {
+    if _use_cuda {
         let mut builder = Session::builder()?;
         let cuda = CUDA::default();
         if cuda.is_available().unwrap_or(false) {
@@ -75,7 +75,10 @@ fn build_kill_session(
                         if msg.to_lowercase().contains("cuda")
                             || msg.contains("no CUDA-capable device")
                         {
-                            eprintln!("kill: CUDA failed ({}), falling back to CPU.", msg.lines().next().unwrap_or(&msg));
+                            eprintln!(
+                                "kill: CUDA failed ({}), falling back to CPU.",
+                                msg.lines().next().unwrap_or(&msg)
+                            );
                             let _ = std::io::stderr().flush();
                             // Fall through to CPU path
                         } else {
@@ -97,11 +100,9 @@ fn normalize_frame(data: &[u16]) -> Vec<u8> {
     if data.is_empty() {
         return vec![];
     }
-    let (min, max) = data
-        .iter()
-        .fold((data[0], data[0]), |(min, max), &v| {
-            (min.min(v), max.max(v))
-        });
+    let (min, max) = data.iter().fold((data[0], data[0]), |(min, max), &v| {
+        (min.min(v), max.max(v))
+    });
     let range = (max - min) as f64;
     data.iter()
         .map(|&v| {
@@ -117,7 +118,9 @@ fn normalize_frame(data: &[u16]) -> Vec<u8> {
 /// Resize grayscale (H,W) to 224x224.
 fn resize_to_224(data: &[u8], width: u32, height: u32) -> GrayImage {
     let img = ImageBuffer::<Luma<u8>, Vec<u8>>::from_raw(width, height, data.to_vec())
-        .unwrap_or_else(|| ImageBuffer::from_raw(width, height, vec![0; (width * height) as usize]).unwrap());
+        .unwrap_or_else(|| {
+            ImageBuffer::from_raw(width, height, vec![0; (width * height) as usize]).unwrap()
+        });
     image::imageops::resize(&img, IMAGE_SIZE, IMAGE_SIZE, FilterType::Triangle)
 }
 
@@ -134,10 +137,7 @@ fn to_nchw_normalized(gray: &GrayImage) -> Vec<f32> {
     out
 }
 
-pub fn run(
-    args: KillArgs,
-    progress: impl Fn(f64, &str),
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(args: KillArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("kill: starting");
     let _ = std::io::stderr().flush();
     let crops_zarr = Path::new(&args.input);
@@ -174,7 +174,10 @@ pub fn run(
     let mut indices: Vec<FrameIndex> = Vec::new();
     for (i, crop_id) in crop_ids.iter().enumerate() {
         if i > 0 && i % 100 == 0 {
-            progress(i as f64 / crop_ids.len() as f64 * 0.2, &format!("Scanning {}/{} crops", i, crop_ids.len()));
+            progress(
+                i as f64 / crop_ids.len() as f64 * 0.2,
+                &format!("Scanning {}/{} crops", i, crop_ids.len()),
+            );
         }
         let array_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
         let arr = zarr::open_array(&store, &array_path)?;
@@ -251,7 +254,8 @@ pub fn run(
         }
 
         let batch_len = batch_frames.len();
-        let mut batch_data = vec![0.0f32; batch_len * 3 * IMAGE_SIZE as usize * IMAGE_SIZE as usize];
+        let mut batch_data =
+            vec![0.0f32; batch_len * 3 * IMAGE_SIZE as usize * IMAGE_SIZE as usize];
 
         for (i, frame) in batch_frames.iter().enumerate() {
             let normalized = normalize_frame(&frame.data);
@@ -305,16 +309,27 @@ pub fn run(
 
         let processed = (batch_start + 1) * batch_size;
         let prog = 0.2 + (processed.min(total) as f64 / total as f64) * 0.8; // 20% for scan, 80% for infer
-        progress(prog, &format!("Predicting {}/{}", processed.min(total), total));
+        progress(
+            prog,
+            &format!("Predicting {}/{}", processed.min(total), total),
+        );
     }
 
     fs::create_dir_all(Path::new(&args.output).parent().unwrap_or(Path::new(".")))?;
     let mut csv = "t,crop,label\n".to_string();
     for (t, crop, label) in &rows {
-        csv.push_str(&format!("{},{},{}\n", t, crop, label.to_string().to_lowercase()));
+        csv.push_str(&format!(
+            "{},{},{}\n",
+            t,
+            crop,
+            label.to_string().to_lowercase()
+        ));
     }
     fs::write(&args.output, csv)?;
-    progress(1.0, &format!("Wrote {} rows to {}", rows.len(), args.output));
+    progress(
+        1.0,
+        &format!("Wrote {} rows to {}", rows.len(), args.output),
+    );
 
     Ok(())
 }

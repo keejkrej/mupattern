@@ -35,11 +35,26 @@ fn parse_bbox_csv(path: &Path) -> Result<Vec<Bbox>, Box<dyn std::error::Error>> 
     }
     let header = lines[0].to_lowercase();
     let cols: Vec<&str> = header.split(',').map(|c| c.trim()).collect();
-    let crop_idx = cols.iter().position(|c| *c == "crop").ok_or("Missing crop column")?;
-    let x_idx = cols.iter().position(|c| *c == "x").ok_or("Missing x column")?;
-    let y_idx = cols.iter().position(|c| *c == "y").ok_or("Missing y column")?;
-    let w_idx = cols.iter().position(|c| *c == "w").ok_or("Missing w column")?;
-    let h_idx = cols.iter().position(|c| *c == "h").ok_or("Missing h column")?;
+    let crop_idx = cols
+        .iter()
+        .position(|c| *c == "crop")
+        .ok_or("Missing crop column")?;
+    let x_idx = cols
+        .iter()
+        .position(|c| *c == "x")
+        .ok_or("Missing x column")?;
+    let y_idx = cols
+        .iter()
+        .position(|c| *c == "y")
+        .ok_or("Missing y column")?;
+    let w_idx = cols
+        .iter()
+        .position(|c| *c == "w")
+        .ok_or("Missing w column")?;
+    let h_idx = cols
+        .iter()
+        .position(|c| *c == "h")
+        .ok_or("Missing h column")?;
 
     let mut out = Vec::new();
     for line in lines.iter().skip(1) {
@@ -106,14 +121,7 @@ fn read_tiff_frame(path: &Path) -> Result<(FrameData, u32, u32), Box<dyn std::er
     Ok((data, width, height))
 }
 
-fn extract_crop_u16(
-    frame: &[u16],
-    frame_width: u32,
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-) -> Vec<u16> {
+fn extract_crop_u16(frame: &[u16], frame_width: u32, x: u32, y: u32, w: u32, h: u32) -> Vec<u16> {
     let mut out = vec![0u16; (w * h) as usize];
     for r in 0..h {
         let src_start = ((y + r) * frame_width + x) as usize;
@@ -124,12 +132,7 @@ fn extract_crop_u16(
     out
 }
 
-fn median_outside_mask_u16(
-    frame: &[u16],
-    width: u32,
-    height: u32,
-    mask: &[bool],
-) -> u16 {
+fn median_outside_mask_u16(frame: &[u16], width: u32, height: u32, mask: &[bool]) -> u16 {
     let mut values = Vec::new();
     let n = (width * height) as usize;
     for i in 0..n {
@@ -169,10 +172,7 @@ fn median_u16_in_place(values: &mut [u16]) -> u16 {
     }
 }
 
-pub fn run(
-    args: CropArgs,
-    progress: impl Fn(f64, &str),
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(args: CropArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn std::error::Error>> {
     let pos_dir = Path::new(&args.input).join(format!("Pos{}", args.pos));
     if !pos_dir.exists() {
         return Err(format!("Position directory not found: {}", pos_dir.display()).into());
@@ -190,9 +190,21 @@ pub fn run(
 
     let mut keys: Vec<_> = index.keys().copied().collect();
     keys.sort();
-    let n_channels = keys.iter().map(|k| k.0).collect::<std::collections::HashSet<_>>().len();
-    let n_times = keys.iter().map(|k| k.1).collect::<std::collections::HashSet<_>>().len();
-    let n_z = keys.iter().map(|k| k.2).collect::<std::collections::HashSet<_>>().len();
+    let n_channels = keys
+        .iter()
+        .map(|k| k.0)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let n_times = keys
+        .iter()
+        .map(|k| k.1)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let n_z = keys
+        .iter()
+        .map(|k| k.2)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
     progress(
         0.0,
         &format!(
@@ -232,21 +244,22 @@ pub fn run(
         crop_arrays.push(arr);
     }
 
-    let bg_array: Option<zarr::StoreArray> =
-        if args.background {
-            let bg_path = format!("/pos/{}/background", pos_id);
-            let shape = vec![n_times_u, n_channels_u, n_z_u];
-            let chunks = vec![1, 1, 1];
-            let attrs = serde_json::json!({
-                "axis_names": ["t", "c", "z"],
-                "description": "Median of pixels outside all crop bounding boxes"
-            })
-            .as_object()
-            .cloned();
-            Some(zarr::create_array_u16(&store, &bg_path, shape, chunks, attrs)?)
-        } else {
-            None
-        };
+    let bg_array: Option<zarr::StoreArray> = if args.background {
+        let bg_path = format!("/pos/{}/background", pos_id);
+        let shape = vec![n_times_u, n_channels_u, n_z_u];
+        let chunks = vec![1, 1, 1];
+        let attrs = serde_json::json!({
+            "axis_names": ["t", "c", "z"],
+            "description": "Median of pixels outside all crop bounding boxes"
+        })
+        .as_object()
+        .cloned();
+        Some(zarr::create_array_u16(
+            &store, &bg_path, shape, chunks, attrs,
+        )?)
+    } else {
+        None
+    };
 
     let mask: Vec<bool> = if args.background {
         let mut m = vec![false; (width * height) as usize];

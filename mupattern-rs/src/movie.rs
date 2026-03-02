@@ -45,7 +45,12 @@ pub fn run(
     let n_t = shape[0];
     let n_channels = shape[1];
     if args.channel >= n_channels as u32 {
-        return Err(format!("Channel {} out of range (0-{})", args.channel, n_channels - 1).into());
+        return Err(format!(
+            "Channel {} out of range (0-{})",
+            args.channel,
+            n_channels - 1
+        )
+        .into());
     }
     let h = shape[3];
     let w = shape[4];
@@ -126,15 +131,24 @@ pub fn run(
 
     let mut child = Command::new(&args.ffmpeg)
         .args([
-            "-f", "rawvideo",
-            "-pix_fmt", "rgb24",
-            "-s", &format!("{}x{}", out_w, out_h),
-            "-r", &args.fps.to_string(),
-            "-i", "pipe:0",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-preset", "slow",
-            "-crf", "15",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            &format!("{}x{}", out_w, out_h),
+            "-r",
+            &args.fps.to_string(),
+            "-i",
+            "pipe:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "slow",
+            "-crf",
+            "15",
             "-y",
             &args.output,
         ])
@@ -182,9 +196,18 @@ fn apply_colormap(v: f64, colormap: &str) -> (u8, u8, u8) {
         }
         "viridis" => {
             let t = v;
-            let r = (0.267 + 0.3244 * t + 2.6477 * t * t - 4.4098 * t * t * t + 2.0942 * t * t * t * t).clamp(0.0, 1.0) * 255.0;
-            let g = (0.0046 + 0.0495 * t + 2.5253 * t * t - 6.0613 * t * t * t + 3.7466 * t * t * t * t).clamp(0.0, 1.0) * 255.0;
-            let b = (0.3294 + 0.1002 * t + 2.3256 * t * t - 3.1356 * t * t * t + 1.5046 * t * t * t * t).clamp(0.0, 1.0) * 255.0;
+            let r = (0.267 + 0.3244 * t + 2.6477 * t * t - 4.4098 * t * t * t
+                + 2.0942 * t * t * t * t)
+                .clamp(0.0, 1.0)
+                * 255.0;
+            let g = (0.0046 + 0.0495 * t + 2.5253 * t * t - 6.0613 * t * t * t
+                + 3.7466 * t * t * t * t)
+                .clamp(0.0, 1.0)
+                * 255.0;
+            let b = (0.3294 + 0.1002 * t + 2.3256 * t * t - 3.1356 * t * t * t
+                + 1.5046 * t * t * t * t)
+                .clamp(0.0, 1.0)
+                * 255.0;
             (r.round() as u8, g.round() as u8, b.round() as u8)
         }
         _ => {

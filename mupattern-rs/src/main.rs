@@ -1,16 +1,4 @@
-mod convert;
-mod crop;
-mod expression;
-mod kill;
-mod movie;
-mod rpc;
-mod slices;
-mod spot;
-mod tissue;
-mod zarr;
-
 use clap::{Parser, Subcommand};
-use std::io::{self, Write};
 
 #[derive(Parser)]
 #[command(
@@ -24,36 +12,27 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Convert(convert::ConvertArgs),
-    Crop(crop::CropArgs),
-    Expression(expression::ExpressionArgs),
-    RpcServer(rpc::RpcServerArgs),
-    Kill(kill::KillArgs),
-    Movie(movie::MovieArgs),
-    Spot(spot::SpotArgs),
-    Tissue(tissue::TissueArgs),
-}
-
-fn progress(prog: f64, msg: &str) {
-    let _ = writeln!(
-        io::stderr(),
-        "{}",
-        serde_json::json!({"progress": prog, "message": msg})
-    );
-    let _ = io::stderr().flush();
+    Convert(mupattern_rs::convert::ConvertArgs),
+    Crop(mupattern_rs::crop::CropArgs),
+    Expression(mupattern_rs::expression::ExpressionArgs),
+    Kill(mupattern_rs::kill::KillArgs),
+    Movie(mupattern_rs::movie::MovieArgs),
+    Spot(mupattern_rs::spot::SpotArgs),
+    Tissue(mupattern_rs::tissue::TissueArgs),
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Convert(args) => convert::run(args, progress)?,
-        Commands::Crop(args) => crop::run(args, progress)?,
-        Commands::Expression(args) => expression::run(args, progress)?,
-        Commands::RpcServer(args) => rpc::run(args)?,
-        Commands::Kill(args) => kill::run(args, progress)?,
-        Commands::Movie(args) => movie::run(args, progress)?,
-        Commands::Spot(args) => spot::run(args, progress)?,
-        Commands::Tissue(args) => tissue::run(args, progress)?,
+        Commands::Convert(args) => mupattern_rs::convert::run(args, mupattern_rs::stderr_progress)?,
+        Commands::Crop(args) => mupattern_rs::crop::run(args, mupattern_rs::stderr_progress)?,
+        Commands::Expression(args) => {
+            mupattern_rs::expression::run(args, mupattern_rs::stderr_progress)?
+        }
+        Commands::Kill(args) => mupattern_rs::kill::run(args, mupattern_rs::stderr_progress)?,
+        Commands::Movie(args) => mupattern_rs::movie::run(args, mupattern_rs::stderr_progress)?,
+        Commands::Spot(args) => mupattern_rs::spot::run(args, mupattern_rs::stderr_progress)?,
+        Commands::Tissue(args) => mupattern_rs::tissue::run(args, mupattern_rs::stderr_progress)?,
     }
     Ok(())
 }

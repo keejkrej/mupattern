@@ -26,16 +26,16 @@ pub struct SpotArgs {
         help = "Crops to process: \"all\" or comma-separated indices/slices, e.g. \"0:10:2, 15\""
     )]
     pub crop: String,
-    #[arg(long, help = "Path to spotiflow ONNX model dir (must contain model.onnx)")]
+    #[arg(
+        long,
+        help = "Path to spotiflow ONNX model dir (must contain model.onnx)"
+    )]
     pub model: String,
     #[arg(long, help = "Force CPU (skip CUDA)")]
     pub cpu: bool,
 }
 
-pub fn run(
-    args: SpotArgs,
-    progress: impl Fn(f64, &str),
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(args: SpotArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn std::error::Error>> {
     let crops_zarr = Path::new(&args.input);
     let pos_id = format!("{:03}", args.pos);
     let crop_root = crops_zarr.join("pos").join(&pos_id).join("crop");
@@ -61,10 +61,7 @@ pub fn run(
     }
 
     let crop_indices = slices::parse_slice_string(&args.crop, all_crop_ids.len())?;
-    let crop_ids: Vec<&String> = crop_indices
-        .iter()
-        .map(|&i| &all_crop_ids[i])
-        .collect();
+    let crop_ids: Vec<&String> = crop_indices.iter().map(|&i| &all_crop_ids[i]).collect();
 
     let model_path = Path::new(&args.model).join("model.onnx");
     if !model_path.exists() {
@@ -120,7 +117,10 @@ pub fn run(
     for (t, crop, spot, y, x) in &rows {
         writeln!(fh, "{},{},{},{:.2},{:.2}", t, crop, spot, y, x)?;
     }
-    progress(1.0, &format!("Wrote {} rows to {}", rows.len(), args.output));
+    progress(
+        1.0,
+        &format!("Wrote {} rows to {}", rows.len(), args.output),
+    );
 
     Ok(())
 }

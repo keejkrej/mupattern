@@ -483,7 +483,7 @@ export interface LoadedWorkspaceImage {
   height: number;
 }
 
-/** Read and decode a TIF for the given position using Electron main process I/O. */
+/** Read and decode a TIF for the given position using the desktop backend. */
 export async function readPositionImage(posNum: number): Promise<LoadedWorkspaceImage | null> {
   const ws = getActiveWorkspace();
   if (!ws) return null;

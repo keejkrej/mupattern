@@ -93,7 +93,10 @@ pub fn run(
             } else {
                 0
             };
-            rows.push(format!("{},{},{},{},{}", t, crop_id, intensity, area, background));
+            rows.push(format!(
+                "{},{},{},{},{}",
+                t, crop_id, intensity, area, background
+            ));
         }
 
         progress(
@@ -105,7 +108,10 @@ pub fn run(
     if !args.output.is_empty() {
         fs::create_dir_all(Path::new(&args.output).parent().unwrap_or(Path::new(".")))?;
         fs::write(&args.output, rows.join("\n"))?;
-        progress(1.0, &format!("Wrote {} rows to {}", rows.len() - 1, args.output));
+        progress(
+            1.0,
+            &format!("Wrote {} rows to {}", rows.len() - 1, args.output),
+        );
     }
     Ok(())
 }

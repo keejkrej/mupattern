@@ -5,6 +5,6 @@
     "dev:desktop": "bun run --cwd mupattern-desktop dev",
     "dev:web": "bun run --cwd mupattern-web dev",
     "build:web": "bun run --cwd mupattern-web build",
-    "build:desktop": "bun run --cwd mupattern-desktop build && bun run --cwd mupattern-desktop pack"
+    "build:desktop": "bun run --cwd mupattern-desktop build"
   }
 }

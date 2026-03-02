@@ -1,5 +1,5 @@
 /**
- * Zarr tree discovery and data access via Electron main process.
+ * Zarr tree discovery and data access via the desktop backend.
  *
  * Layout: /crops.zarr/pos/{posId}/crop/{cropId} → TCZYX arrays
  */
