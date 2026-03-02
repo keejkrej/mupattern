@@ -15,9 +15,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",
+    "preact": "^10.0.0",
     "radix-ui": "^1.4.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
@@ -25,8 +24,7 @@
     "@types/react-dom": "^18.3.1"
   },
   "peerDependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "preact": "^10.0.0",
     "react-router-dom": "^7.0.0"
   }
 }

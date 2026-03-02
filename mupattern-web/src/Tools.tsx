@@ -4,9 +4,6 @@ import { Button, HexBackground, ThemeToggle, useTheme } from "@mupattern/shared"
 import { Eye, Microscope } from "lucide-react";
 import { loadImagePixelsFromFile } from "@/lib/load-image";
 import { startWithImage } from "@/register/store";
-import { setSeeSession } from "@/lib/see-session";
-import { DirectoryStore } from "@/see/lib/directory-store";
-import { listPositions } from "@/see/lib/zarr";
 
 const REQUIRED_TIFF_PATTERN = "img_channel{c}_position{p}_time{t}_z{z}.tif";
 
@@ -45,6 +42,12 @@ export default function Landing() {
       setSeeError("See requires Chrome or Edge. Safari and Firefox are not supported.");
       return;
     }
+    const [{ DirectoryStore }, { listPositions }, { setSeeSession }] = await Promise.all([
+      import("@/see/lib/directory-store"),
+      import("@/see/lib/zarr"),
+      import("@/lib/see-session"),
+    ]);
+
     setSeeLoading(true);
     setSeeError(null);
     try {

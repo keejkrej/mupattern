@@ -6,8 +6,8 @@ End-to-end pipeline for high-throughput single-cell analysis on micropatterns: k
 
 ## Overview
 
-- **mupattern-desktop** (Electron/React): Full workspace for multi-position datasets. Uses mupattern-rs for crop, kill, movie, expression, tissue, spot.
-- **mupattern-web** (React): Lightweight web app for pattern registration (`/tools` → Register) and crop viewing (`/tools` → See).
+- **mupattern-desktop** (Electron/Preact): Full workspace for multi-position datasets. Uses mupattern-rs for crop, kill, movie, expression, tissue, spot.
+- **mupattern-web** (Preact): Lightweight web app for pattern registration (`/tools` → Register) and crop viewing (`/tools` → See).
 - **mupattern-rs** (Rust): Production CLI (convert, crop, expression, kill, movie, spot, tissue), used by the desktop app.
 - **mupattern-py** (Python): Reference CLI + ML training/inference (convert, crop, kill, train, etc.).
 
@@ -86,4 +86,4 @@ Please cite the original work when using these models in publications.
 
 ## Tech Stack
 
-React, TypeScript, Vite, Tailwind CSS, TanStack Store, Electron, Rust, Python, ONNX Runtime.
+Preact (compat), TypeScript, Vite, Tailwind CSS, TanStack Store, Electron, Rust, Python, ONNX Runtime.

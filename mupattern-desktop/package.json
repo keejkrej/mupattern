@@ -25,9 +25,8 @@
     "lucide-react": "^0.563.0",
     "numcodecs": "^0.3.2",
     "onnxruntime-node": "^1.24.2",
+    "preact": "^10.0.0",
     "radix-ui": "^1.4.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.0",
     "recharts": "^3.7.0",
     "sharp": "^0.34.5",
@@ -44,7 +43,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/wicg-file-system-access": "^2023.10.7",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@preact/preset-vite": "^2.0.0",
     "concurrently": "^9.2.1",
     "electron": "^34.5.8",
     "electron-rebuild": "^3.2.9",
@@ -54,7 +53,7 @@
     "wait-on": "^8.0.5"
   },
   "build": {
-    "artifactName": "mupattern-desktop-windows-x86_64.${ext}",
+    "artifactName": "mupattern-desktop-${os}-${arch}.${ext}",
     "directories": {
       "output": "../release"
     },
