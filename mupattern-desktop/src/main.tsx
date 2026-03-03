@@ -1,4 +1,4 @@
-import "./lib/tauri-bridge";
+import "./lib/desktop-bridge";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";

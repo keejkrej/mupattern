@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@tanstack/react-store";
 import { AppHeader, Button } from "@mupattern/shared";
@@ -60,7 +60,54 @@ export default function TasksDashboardPage() {
   const [tissueModalOpen, setTissueModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const progressUnsubscribeRef = useRef<(() => void) | null>(null);
+
+  const appendProgressEvent = useCallback(
+    (taskId: string, progress: number, message: string) => {
+      setTasks((prev) =>
+        prev.map((task) => {
+          if (task.id !== taskId) return task;
+          return {
+            ...task,
+            progress_events: [
+              ...task.progress_events,
+              {
+                progress,
+                message,
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const unsub = [
+      window.mupatternDesktop.tasks.onCropProgress(({ taskId, progress, message }) =>
+        appendProgressEvent(taskId, progress, message),
+      ),
+      window.mupatternDesktop.tasks.onConvertProgress(({ taskId, progress, message }) =>
+        appendProgressEvent(taskId, progress, message),
+      ),
+      window.mupatternDesktop.tasks.onExpressionAnalyzeProgress(({ taskId, progress, message }) =>
+        appendProgressEvent(taskId, progress, message),
+      ),
+      window.mupatternDesktop.tasks.onKillPredictProgress(({ taskId, progress, message }) =>
+        appendProgressEvent(taskId, progress, message),
+      ),
+      window.mupatternDesktop.tasks.onTissueAnalyzeProgress(({ taskId, progress, message }) =>
+        appendProgressEvent(taskId, progress, message),
+      ),
+      window.mupatternDesktop.tasks.onMovieProgress(({ taskId, progress, message }) =>
+        appendProgressEvent(taskId, progress, message),
+      ),
+    ];
+    return () => {
+      unsub.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [appendProgressEvent]);
 
   useEffect(() => {
     window.mupatternDesktop.tasks.listTasks().then((list) => {
@@ -137,28 +184,8 @@ export default function TasksDashboardPage() {
       setCropModalOpen(false);
       setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onCropProgress((ev) => {
-        if (ev.taskId !== taskId) return;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              progress_events: [
-                ...t.progress_events,
-                {
-                  progress: ev.progress,
-                  message: ev.message,
-                  timestamp: new Date().toISOString(),
-                },
-              ],
-            };
-          }),
-        );
-      });
-
       try {
-        const result = await window.mupatternDesktop.tasks.runCrop({
+        const startResult = await window.mupatternDesktop.tasks.startCrop({
           taskId,
           input_dir: activeWorkspace.rootPath,
           pos,
@@ -166,22 +193,20 @@ export default function TasksDashboardPage() {
           output: destination,
           background,
         });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-            };
-          }),
-        );
+        if (!startResult.ok) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: startResult.error,
+              };
+            }),
+          );
+        }
       } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setTasks((prev) =>
           prev.map((t) => {
@@ -223,57 +248,25 @@ export default function TasksDashboardPage() {
       setExpressionModalOpen(false);
       setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onExpressionAnalyzeProgress(
-        (ev) => {
-          if (ev.taskId !== taskId) return;
+      try {
+        const startResult = await window.mupatternDesktop.tasks.startExpressionAnalyze({
+          taskId,
+          ...params,
+        });
+        if (!startResult.ok) {
           setTasks((prev) =>
             prev.map((t) => {
               if (t.id !== taskId) return t;
               return {
                 ...t,
-                progress_events: [
-                  ...t.progress_events,
-                  {
-                    progress: ev.progress,
-                    message: ev.message,
-                    timestamp: new Date().toISOString(),
-                  },
-                ],
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: startResult.error,
               };
             }),
           );
-        },
-      );
-
-      try {
-        const result = await window.mupatternDesktop.tasks.runExpressionAnalyze({
-          taskId,
-          ...params,
-        });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-              result: result.ok
-                ? {
-                    output: result.output,
-                    datasetId: result.datasetId,
-                    series: result.series,
-                    metrics: result.metrics,
-                  }
-                : null,
-            };
-          }),
-        );
+        }
       } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setTasks((prev) =>
           prev.map((t) => {
@@ -323,50 +316,25 @@ export default function TasksDashboardPage() {
       setTissueModalOpen(false);
       setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onTissueAnalyzeProgress(
-        (ev) => {
-          if (ev.taskId !== taskId) return;
+      try {
+        const startResult = await window.mupatternDesktop.tasks.startTissueAnalyze({
+          taskId,
+          ...params,
+        });
+        if (!startResult.ok) {
           setTasks((prev) =>
             prev.map((t) => {
               if (t.id !== taskId) return t;
               return {
                 ...t,
-                progress_events: [
-                  ...t.progress_events,
-                  {
-                    progress: ev.progress,
-                    message: ev.message,
-                    timestamp: new Date().toISOString(),
-                  },
-                ],
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: startResult.error,
               };
             }),
           );
-        },
-      );
-
-      try {
-        const result = await window.mupatternDesktop.tasks.runTissueAnalyze({
-          taskId,
-          ...params,
-        });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-              result: result.ok ? { output: result.output, rows: result.rows } : null,
-            };
-          }),
-        );
+        }
       } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setTasks((prev) =>
           prev.map((t) => {
@@ -408,48 +376,25 @@ export default function TasksDashboardPage() {
       setKillModalOpen(false);
       setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onKillPredictProgress((ev) => {
-        if (ev.taskId !== taskId) return;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              progress_events: [
-                ...t.progress_events,
-                {
-                  progress: ev.progress,
-                  message: ev.message,
-                  timestamp: new Date().toISOString(),
-                },
-              ],
-            };
-          }),
-        );
-      });
-
       try {
-        const result = await window.mupatternDesktop.tasks.runKillPredict({
+        const startResult = await window.mupatternDesktop.tasks.startKillPredict({
           taskId,
           ...params,
         });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-              result: result.ok ? { output: result.output, rows: result.rows } : null,
-            };
-          }),
-        );
+        if (!startResult.ok) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: startResult.error,
+              };
+            }),
+          );
+        }
       } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setTasks((prev) =>
           prev.map((t) => {
@@ -501,47 +446,25 @@ export default function TasksDashboardPage() {
       setMovieModalOpen(false);
       setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onMovieProgress((ev) => {
-        if (ev.taskId !== taskId) return;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              progress_events: [
-                ...t.progress_events,
-                {
-                  progress: ev.progress,
-                  message: ev.message,
-                  timestamp: new Date().toISOString(),
-                },
-              ],
-            };
-          }),
-        );
-      });
-
       try {
-        const result = await window.mupatternDesktop.tasks.runMovie({
+        const startResult = await window.mupatternDesktop.tasks.startMovie({
           taskId,
           ...params,
         });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-            };
-          }),
-        );
+        if (!startResult.ok) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: startResult.error,
+              };
+            }),
+          );
+        }
       } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setTasks((prev) =>
           prev.map((t) => {
@@ -582,50 +505,28 @@ export default function TasksDashboardPage() {
       setConvertModalOpen(false);
       setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onConvertProgress((ev) => {
-        if (ev.taskId !== taskId) return;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              progress_events: [
-                ...t.progress_events,
-                {
-                  progress: ev.progress,
-                  message: ev.message,
-                  timestamp: new Date().toISOString(),
-                },
-              ],
-            };
-          }),
-        );
-      });
-
       try {
-        const result = await window.mupatternDesktop.tasks.runConvert({
+        const startResult = await window.mupatternDesktop.tasks.startConvert({
           taskId,
           input,
           output,
           pos,
           time,
         });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-            };
-          }),
-        );
+        if (!startResult.ok) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: startResult.error,
+              };
+            }),
+          );
+        }
       } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setTasks((prev) =>
           prev.map((t) => {
@@ -874,10 +775,22 @@ export default function TasksDashboardPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
+                                onClick={async () => {
                                   const r = task.result as {
+                                    output?: string;
                                     rows?: Array<{ t: number; crop: string; label: boolean }>;
                                   } | null;
+                                  if (r?.output) {
+                                    const loaded = await window.mupatternDesktop.application.loadKillCsv(
+                                      r.output,
+                                    );
+                                    if (loaded.ok) {
+                                      navigate("/application", {
+                                        state: { killRows: loaded.rows },
+                                      });
+                                      return;
+                                    }
+                                  }
                                   navigate("/application", {
                                     state: { killRows: r?.rows ?? null },
                                   });
@@ -889,8 +802,9 @@ export default function TasksDashboardPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
+                                onClick={async () => {
                                   const r = task.result as {
+                                    output?: string;
                                     rows?: Array<{
                                       t: number;
                                       crop: string;
@@ -900,6 +814,18 @@ export default function TasksDashboardPage() {
                                       background: number;
                                     }>;
                                   } | null;
+                                  if (r?.output) {
+                                    const loaded =
+                                      await window.mupatternDesktop.application.loadTissueCsv(
+                                        r.output,
+                                      );
+                                    if (loaded.ok) {
+                                      navigate("/application", {
+                                        state: { tissueRows: loaded.rows },
+                                      });
+                                      return;
+                                    }
+                                  }
                                   navigate("/application", {
                                     state: { tissueRows: r?.rows ?? null },
                                   });

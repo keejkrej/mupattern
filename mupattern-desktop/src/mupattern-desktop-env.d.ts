@@ -172,10 +172,25 @@ declare global {
           output: string;
           background: boolean;
         }) => Promise<{ ok: true } | { ok: false; error: string }>;
+        startCrop: (payload: {
+          taskId: string;
+          input_dir: string;
+          pos: number;
+          bbox: string;
+          output: string;
+          background: boolean;
+        }) => Promise<{ ok: true } | { ok: false; error: string }>;
         onCropProgress: (
           callback: (ev: { taskId: string; progress: number; message: string }) => void,
         ) => () => void;
         runConvert: (payload: {
+          taskId: string;
+          input: string;
+          output: string;
+          pos: string;
+          time: string;
+        }) => Promise<{ ok: true } | { ok: false; error: string }>;
+        startConvert: (payload: {
           taskId: string;
           input: string;
           output: string;
@@ -211,6 +226,13 @@ declare global {
             }
           | { ok: false; error: string }
         >;
+        startExpressionAnalyze: (payload: {
+          taskId: string;
+          workspacePath: string;
+          pos: number;
+          channel: number;
+          output: string;
+        }) => Promise<{ ok: true } | { ok: false; error: string }>;
         onExpressionAnalyzeProgress: (
           callback: (ev: { taskId: string; progress: number; message: string }) => void,
         ) => () => void;
@@ -238,6 +260,16 @@ declare global {
             }
           | { ok: false; error: string }
         >;
+        startTissueAnalyze: (payload: {
+          taskId: string;
+          workspacePath: string;
+          pos: number;
+          channelPhase: number;
+          channelFluorescence: number;
+          method: string;
+          model: string;
+          output: string;
+        }) => Promise<{ ok: true } | { ok: false; error: string }>;
         onTissueAnalyzeProgress: (
           callback: (ev: { taskId: string; progress: number; message: string }) => void,
         ) => () => void;
@@ -252,10 +284,30 @@ declare global {
           | { ok: true; output: string; rows: Array<{ t: number; crop: string; label: boolean }> }
           | { ok: false; error: string }
         >;
+        startKillPredict: (payload: {
+          taskId: string;
+          workspacePath: string;
+          pos: number;
+          modelPath: string;
+          output: string;
+          batchSize?: number;
+        }) => Promise<{ ok: true } | { ok: false; error: string }>;
         onKillPredictProgress: (
           callback: (ev: { taskId: string; progress: number; message: string }) => void,
         ) => () => void;
         runMovie: (payload: {
+          taskId: string;
+          input_zarr: string;
+          pos: number;
+          crop: number;
+          channel: number;
+          time: string;
+          output: string;
+          fps: number;
+          colormap: string;
+          spots: string | null;
+        }) => Promise<{ ok: true } | { ok: false; error: string }>;
+        startMovie: (payload: {
           taskId: string;
           input_zarr: string;
           pos: number;

@@ -87,8 +87,16 @@ export default function WorkspaceDashboard() {
       });
       setPendingWorkspaceAssayType("free");
     } catch (e) {
-      if ((e as DOMException).name !== "AbortError") {
-        setError("Failed to open folder.");
+      const error = e as { name?: string; message?: string };
+      if (error.name !== "AbortError") {
+        const message = error?.message?.trim() || "Failed to open folder.";
+        const prefix = "Failed to open folder";
+        const normalized = message.endsWith(".") ? message.slice(0, -1) : message;
+        if (normalized === prefix) {
+          setError(`${prefix}.`);
+        } else {
+          setError(`${prefix}: ${normalized}`);
+        }
       }
     } finally {
       setLoading(false);
@@ -126,8 +134,16 @@ export default function WorkspaceDashboard() {
       setError("Workspace path is unavailable. Remove and re-add this workspace.");
       return;
     }
-    const scan = await window.mupatternDesktop.workspace.rescanDirectory(ws.rootPath);
-    if (scan) updateWorkspaceScan(ws.id, scan);
+    try {
+      const scan = await window.mupatternDesktop.workspace.rescanDirectory(ws.rootPath);
+      if (scan) updateWorkspaceScan(ws.id, scan);
+    } catch (e) {
+      const error = e as { name?: string; message?: string };
+      if (error.name !== "AbortError") {
+        console.warn("Failed to refresh workspace scan:", error);
+        setError(`Could not refresh workspace scan: ${error.message ?? "unknown error"}`);
+      }
+    }
     setActiveWorkspace(ws.id);
   }, []);
 
@@ -270,7 +286,7 @@ export default function WorkspaceDashboard() {
       const results = await Promise.all(
         workspaces.map((ws) =>
           ws.rootPath
-            ? window.mupatternDesktop.workspace.pathExists(ws.rootPath)
+            ? window.mupatternDesktop.workspace.pathExists(ws.rootPath).catch(() => false)
             : Promise.resolve(false),
         ),
       );
