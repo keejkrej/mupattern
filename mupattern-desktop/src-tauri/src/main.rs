@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod backend;
 
 fn main() {
@@ -28,6 +30,12 @@ fn main() {
             backend::tasks::tasks_pick_movie_output,
             backend::tasks::tasks_pick_spots_file,
             backend::tasks::tasks_has_bbox_csv,
+            backend::tasks::tasks_plan_convert,
+            backend::tasks::tasks_plan_crop,
+            backend::tasks::tasks_plan_expression_analyze,
+            backend::tasks::tasks_plan_kill_predict,
+            backend::tasks::tasks_plan_tissue_analyze,
+            backend::tasks::tasks_plan_movie,
             backend::tasks::tasks_run_convert,
             backend::tasks::tasks_start_convert,
             backend::tasks::tasks_start_crop,

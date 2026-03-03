@@ -1,6 +1,6 @@
 use clap::Args;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -18,6 +18,24 @@ pub struct CropArgs {
     pub output: String,
     #[arg(long, default_value_t = false)]
     pub background: bool,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub yes: bool,
+    /// Show planned crop and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct CropPlan {
+    pub pos: u32,
+    pub n_channels: usize,
+    pub n_times: usize,
+    pub n_z: usize,
+    pub n_bboxes: usize,
+    pub n_input_frames: usize,
+    pub total_output_frames: usize,
+    pub output: String,
 }
 
 struct Bbox {
@@ -170,6 +188,42 @@ fn median_u16_in_place(values: &mut [u16]) -> u16 {
         let left_max = values[..mid].iter().max().copied().unwrap();
         ((left_max as u32 + values[mid] as u32) / 2) as u16
     }
+}
+
+pub fn plan(args: &CropArgs) -> Result<CropPlan, Box<dyn std::error::Error>> {
+    let pos_dir = Path::new(&args.input).join(format!("Pos{}", args.pos));
+    if !pos_dir.exists() {
+        return Err(format!("Position directory not found: {}", pos_dir.display()).into());
+    }
+
+    let bboxes = parse_bbox_csv(Path::new(&args.bbox))?;
+    if bboxes.is_empty() {
+        return Err("No valid bounding boxes in bbox CSV".into());
+    }
+
+    let index = discover_tiffs(&pos_dir, args.pos)?;
+    if index.is_empty() {
+        return Err(format!("No TIFFs found in {}", pos_dir.display()).into());
+    }
+
+    let mut keys: Vec<_> = index.keys().copied().collect();
+    keys.sort();
+
+    let n_channels = keys.iter().map(|(c, _, _)| *c).collect::<HashSet<_>>().len();
+    let n_times = keys.iter().map(|(_, t, _)| *t).collect::<HashSet<_>>().len();
+    let n_z = keys.iter().map(|(_, _, z)| *z).collect::<HashSet<_>>().len();
+    let n_input_frames = keys.len();
+
+    Ok(CropPlan {
+        pos: args.pos,
+        n_channels,
+        n_times,
+        n_z,
+        n_bboxes: bboxes.len(),
+        n_input_frames,
+        total_output_frames: n_input_frames.saturating_mul(bboxes.len()),
+        output: args.output.clone(),
+    })
 }
 
 pub fn run(args: CropArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn std::error::Error>> {

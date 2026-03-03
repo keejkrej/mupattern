@@ -25,5 +25,6 @@ image = "0.25"
 zarrs = { version = "0.23", default-features = false, features = ["filesystem", "blosc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+indicatif = "0.17"
 regex = "1"
 csv = "1"

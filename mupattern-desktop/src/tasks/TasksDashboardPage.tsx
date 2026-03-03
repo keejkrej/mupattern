@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@tanstack/react-store";
-import { AppHeader, Button } from "@mupattern/shared";
+import { AppHeader, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@mupattern/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { workspaceStore } from "@/workspace/store";
 import { getVisibleTaskKinds } from "@/lib/workspace-tags";
@@ -45,6 +45,22 @@ interface TaskRecord {
   progress_events: Array<{ progress: number; message: string; timestamp: string }>;
 }
 
+interface ConvertPlanDraft {
+  input: string;
+  output: string;
+  pos: string;
+  time: string;
+  nPos: number;
+  nTime: number;
+  nChan: number;
+  nZ: number;
+  selectedPositions: number;
+  selectedTimepoints: number;
+  totalFrames: number;
+  positions: number[];
+  timeIndices: number[];
+}
+
 export default function TasksDashboardPage() {
   const navigate = useNavigate();
   const workspaces = useStore(workspaceStore, (s) => s.workspaces);
@@ -60,6 +76,8 @@ export default function TasksDashboardPage() {
   const [tissueModalOpen, setTissueModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [convertPlan, setConvertPlan] = useState<ConvertPlanDraft | null>(null);
+  const [isStartingConvert, setIsStartingConvert] = useState(false);
 
   const appendProgressEvent = useCallback(
     (taskId: string, progress: number, message: string) => {
@@ -163,28 +181,44 @@ export default function TasksDashboardPage() {
   const handleCreateCrop = useCallback(
     async (pos: number, destination: string, background: boolean) => {
       if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "file.crop",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: { pos, output: destination, background },
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setCropModalOpen(false);
-      setAddMenuOpen(false);
-
+      let taskId: string | null = null;
       try {
+        setError(null);
+        const planResult = await window.mupatternDesktop.tasks.planCrop({
+          input_dir: activeWorkspace.rootPath,
+          pos,
+          bbox: `${activeWorkspace.rootPath}/Pos${pos}_bbox.csv`,
+          output: destination,
+          background,
+        });
+        if (!planResult.ok) {
+          setError(`Could not build crop plan: ${planResult.error}`);
+          return;
+        }
+        if (!window.confirm(planResult.summary)) {
+          return;
+        }
+
+        taskId = crypto.randomUUID();
+        const task: TaskRecord = {
+          id: taskId,
+          kind: "file.crop",
+          status: "running",
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          request: { pos, output: destination, background },
+          result: null,
+          error: null,
+          logs: [],
+          progress_events: [],
+        };
+        await window.mupatternDesktop.tasks.insertTask(task as unknown);
+        setTasks((prev) => [task, ...prev]);
+        setSelectedTaskId(taskId);
+        setCropModalOpen(false);
+        setAddMenuOpen(false);
+
         const startResult = await window.mupatternDesktop.tasks.startCrop({
           taskId,
           input_dir: activeWorkspace.rootPath,
@@ -208,17 +242,19 @@ export default function TasksDashboardPage() {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
+        if (taskId) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: e instanceof Error ? e.message : String(e),
+              };
+            }),
+          );
+        }
       }
     },
     [activeWorkspace],
@@ -227,28 +263,43 @@ export default function TasksDashboardPage() {
   const handleCreateExpressionAnalyze = useCallback(
     async (params: { workspacePath: string; pos: number; channel: number; output: string }) => {
       if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "expression.analyze",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: params,
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setExpressionModalOpen(false);
-      setAddMenuOpen(false);
-
+      let taskId: string | null = null;
       try {
+        setError(null);
+        const planResult = await window.mupatternDesktop.tasks.planExpressionAnalyze({
+          workspacePath: params.workspacePath,
+          pos: params.pos,
+          channel: params.channel,
+          output: params.output,
+        });
+        if (!planResult.ok) {
+          setError(`Could not build expression plan: ${planResult.error}`);
+          return;
+        }
+        if (!window.confirm(planResult.summary)) {
+          return;
+        }
+
+        taskId = crypto.randomUUID();
+        const task: TaskRecord = {
+          id: taskId,
+          kind: "expression.analyze",
+          status: "running",
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          request: params,
+          result: null,
+          error: null,
+          logs: [],
+          progress_events: [],
+        };
+        await window.mupatternDesktop.tasks.insertTask(task as unknown);
+        setTasks((prev) => [task, ...prev]);
+        setSelectedTaskId(taskId);
+        setExpressionModalOpen(false);
+        setAddMenuOpen(false);
+
         const startResult = await window.mupatternDesktop.tasks.startExpressionAnalyze({
           taskId,
           ...params,
@@ -268,17 +319,19 @@ export default function TasksDashboardPage() {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
+        if (taskId) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: e instanceof Error ? e.message : String(e),
+              };
+            }),
+          );
+        }
       }
     },
     [activeWorkspace],
@@ -295,28 +348,46 @@ export default function TasksDashboardPage() {
       output: string;
     }) => {
       if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "tissue.analyze",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: params,
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setTissueModalOpen(false);
-      setAddMenuOpen(false);
-
+      let taskId: string | null = null;
       try {
+        setError(null);
+        const planResult = await window.mupatternDesktop.tasks.planTissueAnalyze({
+          workspacePath: params.workspacePath,
+          pos: params.pos,
+          channelPhase: params.channelPhase,
+          channelFluorescence: params.channelFluorescence,
+          method: params.method,
+          model: params.model,
+          output: params.output,
+        });
+        if (!planResult.ok) {
+          setError(`Could not build tissue plan: ${planResult.error}`);
+          return;
+        }
+        if (!window.confirm(planResult.summary)) {
+          return;
+        }
+
+        taskId = crypto.randomUUID();
+        const task: TaskRecord = {
+          id: taskId,
+          kind: "tissue.analyze",
+          status: "running",
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          request: params,
+          result: null,
+          error: null,
+          logs: [],
+          progress_events: [],
+        };
+        await window.mupatternDesktop.tasks.insertTask(task as unknown);
+        setTasks((prev) => [task, ...prev]);
+        setSelectedTaskId(taskId);
+        setTissueModalOpen(false);
+        setAddMenuOpen(false);
+
         const startResult = await window.mupatternDesktop.tasks.startTissueAnalyze({
           taskId,
           ...params,
@@ -336,17 +407,19 @@ export default function TasksDashboardPage() {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
+        if (taskId) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: e instanceof Error ? e.message : String(e),
+              };
+            }),
+          );
+        }
       }
     },
     [activeWorkspace],
@@ -355,28 +428,43 @@ export default function TasksDashboardPage() {
   const handleCreateKillPredict = useCallback(
     async (params: { workspacePath: string; pos: number; modelPath: string; output: string }) => {
       if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "kill.predict",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: params,
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setKillModalOpen(false);
-      setAddMenuOpen(false);
-
+      let taskId: string | null = null;
       try {
+        setError(null);
+        const planResult = await window.mupatternDesktop.tasks.planKillPredict({
+          workspacePath: params.workspacePath,
+          pos: params.pos,
+          modelPath: params.modelPath,
+          output: params.output,
+        });
+        if (!planResult.ok) {
+          setError(`Could not build kill plan: ${planResult.error}`);
+          return;
+        }
+        if (!window.confirm(planResult.summary)) {
+          return;
+        }
+
+        taskId = crypto.randomUUID();
+        const task: TaskRecord = {
+          id: taskId,
+          kind: "kill.predict",
+          status: "running",
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          request: params,
+          result: null,
+          error: null,
+          logs: [],
+          progress_events: [],
+        };
+        await window.mupatternDesktop.tasks.insertTask(task as unknown);
+        setTasks((prev) => [task, ...prev]);
+        setSelectedTaskId(taskId);
+        setKillModalOpen(false);
+        setAddMenuOpen(false);
+
         const startResult = await window.mupatternDesktop.tasks.startKillPredict({
           taskId,
           ...params,
@@ -396,17 +484,19 @@ export default function TasksDashboardPage() {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
+        if (taskId) {
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id !== taskId) return t;
+              return {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: e instanceof Error ? e.message : String(e),
+              };
+            }),
+          );
+        }
       }
     },
     [activeWorkspace],
@@ -423,30 +513,50 @@ export default function TasksDashboardPage() {
       fps: number;
       colormap: string;
       spots: string | null;
-    }) => {
+  }) => {
       if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "file.movie",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: params,
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setMovieModalOpen(false);
-      setAddMenuOpen(false);
-
+      let taskId: string | null = null;
       try {
+        setError(null);
+        const planResult = await window.mupatternDesktop.tasks.planMovie({
+          input_zarr: params.input_zarr,
+          pos: params.pos,
+          crop: params.crop,
+          channel: params.channel,
+          time: params.time,
+          output: params.output,
+          fps: params.fps,
+          colormap: params.colormap,
+          spots: params.spots,
+        });
+        if (!planResult.ok) {
+          setError(`Could not build movie plan: ${planResult.error}`);
+          return;
+        }
+        if (!window.confirm(planResult.summary)) {
+          return;
+        }
+
+        taskId = crypto.randomUUID();
+        const task: TaskRecord = {
+          id: taskId,
+          kind: "file.movie",
+          status: "running",
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          request: params,
+          result: null,
+          error: null,
+          logs: [],
+          progress_events: [],
+        };
+        await window.mupatternDesktop.tasks.insertTask(task as unknown);
+        setTasks((prev) => [task, ...prev]);
+        setSelectedTaskId(taskId);
+        setMovieModalOpen(false);
+        setAddMenuOpen(false);
+
         const startResult = await window.mupatternDesktop.tasks.startMovie({
           taskId,
           ...params,
@@ -466,54 +576,7 @@ export default function TasksDashboardPage() {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
-      }
-    },
-    [activeWorkspace],
-  );
-
-  const handleCreateConvert = useCallback(
-    async (input: string, output: string, pos: string, time: string) => {
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "file.convert",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: { input, output, pos, time },
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setConvertModalOpen(false);
-      setAddMenuOpen(false);
-
-      try {
-        const startResult = await window.mupatternDesktop.tasks.startConvert({
-          taskId,
-          input,
-          output,
-          pos,
-          time,
-        });
-        if (!startResult.ok) {
+        if (taskId) {
           setTasks((prev) =>
             prev.map((t) => {
               if (t.id !== taskId) return t;
@@ -521,13 +584,44 @@ export default function TasksDashboardPage() {
                 ...t,
                 status: "failed",
                 finished_at: new Date().toISOString(),
-                error: startResult.error,
+                error: e instanceof Error ? e.message : String(e),
               };
             }),
           );
         }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [activeWorkspace],
+  );
+
+  const startConvertFromDraft = useCallback(async (plan: ConvertPlanDraft) => {
+    const taskId = crypto.randomUUID();
+    const task: TaskRecord = {
+      id: taskId,
+      kind: "file.convert",
+      status: "running",
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      finished_at: null,
+      request: { input: plan.input, output: plan.output, pos: plan.pos, time: plan.time },
+      result: null,
+      error: null,
+      logs: [],
+      progress_events: [],
+    };
+    await window.mupatternDesktop.tasks.insertTask(task as unknown);
+    setTasks((prev) => [task, ...prev]);
+    setSelectedTaskId(taskId);
+
+    try {
+      const startResult = await window.mupatternDesktop.tasks.startConvert({
+        taskId,
+        input: plan.input,
+        output: plan.output,
+        pos: plan.pos,
+        time: plan.time,
+      });
+      if (!startResult.ok) {
         setTasks((prev) =>
           prev.map((t) => {
             if (t.id !== taskId) return t;
@@ -535,14 +629,99 @@ export default function TasksDashboardPage() {
               ...t,
               status: "failed",
               finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
+              error: startResult.error,
             };
           }),
         );
       }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.id !== taskId) return t;
+          return {
+            ...t,
+            status: "failed",
+            finished_at: new Date().toISOString(),
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }),
+      );
+    }
+  }, []);
+
+  const executeConvertPlan = useCallback(async () => {
+    if (!convertPlan) return;
+    setIsStartingConvert(true);
+    setError(null);
+    try {
+      await startConvertFromDraft(convertPlan);
+      setConvertPlan(null);
+      setAddMenuOpen(false);
+      setConvertModalOpen(false);
+    } finally {
+      setIsStartingConvert(false);
+    }
+  }, [convertPlan, startConvertFromDraft]);
+
+  const handleCreateConvert = useCallback(
+    async (input: string, output: string, pos: string, time: string) => {
+      setError(null);
+      try {
+        const planResult = await window.mupatternDesktop.tasks.planConvert({
+          input,
+          output,
+          pos,
+          time,
+        });
+        if (!planResult.ok) {
+          setError(`Could not build convert plan: ${planResult.error}`);
+          return false;
+        }
+        setConvertPlan({
+          input,
+          output: planResult.output,
+          pos,
+          time,
+          nPos: planResult.nPos,
+          nTime: planResult.nTime,
+          nChan: planResult.nChan,
+          nZ: planResult.nZ,
+          selectedPositions: planResult.selectedPositions,
+          selectedTimepoints: planResult.selectedTimepoints,
+          totalFrames: planResult.totalFrames,
+          positions: planResult.positions,
+          timeIndices: planResult.timeIndices,
+        });
+        setConvertModalOpen(false);
+        return false;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return false;
+      }
     },
     [],
   );
+
+  const convertSummary = useMemo(() => {
+    if (!convertPlan) return null;
+    const positionsText =
+      convertPlan.positions.length > 12
+        ? `${convertPlan.positions.slice(0, 6).join(", ")} ... ${convertPlan.positions
+            .slice(-6)
+            .join(", ")}`
+        : convertPlan.positions.join(", ");
+    const timeText =
+      convertPlan.timeIndices.length > 12
+        ? `${convertPlan.timeIndices.slice(0, 6).join(", ")} ... ${convertPlan.timeIndices
+            .slice(-6)
+            .join(", ")}`
+        : convertPlan.timeIndices.join(", ");
+    return {
+      positionsText,
+      timeText,
+    };
+  }, [convertPlan]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -873,6 +1052,77 @@ export default function TasksDashboardPage() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(convertPlan)}
+        onOpenChange={(open) => {
+          if (!open) setConvertPlan(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[680px]">
+          <DialogHeader>
+            <DialogTitle>Convert plan confirmation</DialogTitle>
+          </DialogHeader>
+          {convertPlan && convertSummary ? (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-[110px_1fr] items-start gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide mt-0.5">
+                  Input
+                </span>
+                <code className="text-xs break-all">{convertPlan.input}</code>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] items-start gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide mt-0.5">
+                  Output
+                </span>
+                <code className="text-xs break-all">{convertPlan.output}</code>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] items-start gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide mt-0.5">
+                  Positions
+                </span>
+                <span className="text-xs">
+                  {convertPlan.selectedPositions}/{convertPlan.nPos} ({convertSummary.positionsText})
+                </span>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] items-start gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide mt-0.5">
+                  Timepoints
+                </span>
+                <span className="text-xs">
+                  {convertPlan.selectedTimepoints}/{convertPlan.nTime} ({convertSummary.timeText})
+                </span>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide">Channels</span>
+                <span className="text-xs">{convertPlan.nChan}</span>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide">Z-slices</span>
+                <span className="text-xs">{convertPlan.nZ}</span>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                <span className="text-muted-foreground text-xs uppercase tracking-wide">Total frames</span>
+                <span className="text-xs">{convertPlan.totalFrames}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm">No convert plan available.</p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConvertPlan(null)}
+              disabled={isStartingConvert}
+            >
+              Cancel
+            </Button>
+            <Button onClick={executeConvertPlan} disabled={isStartingConvert}>
+              {isStartingConvert ? "Starting..." : "Run convert"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConvertTaskConfigModal
         open={convertModalOpen}

@@ -164,6 +164,82 @@ declare global {
         pickND2Input: () => Promise<{ path: string } | null>;
         pickConvertOutput: () => Promise<{ path: string } | null>;
         hasBboxCsv: (payload: { workspacePath: string; pos: number }) => Promise<boolean>;
+        planCrop: (payload: {
+          input_dir: string;
+          pos: number;
+          bbox: string;
+          output: string;
+          background: boolean;
+        }) => Promise<
+          | { ok: true; task: string; output: string; summary: string }
+          | { ok: false; error: string }
+        >;
+        planConvert: (payload: {
+          input: string;
+          output: string;
+          pos: string;
+          time: string;
+        }) => Promise<
+          | {
+              ok: true;
+              output: string;
+              nPos: number;
+              nTime: number;
+              nChan: number;
+              nZ: number;
+              selectedPositions: number;
+              selectedTimepoints: number;
+              totalFrames: number;
+              positions: number[];
+              timeIndices: number[];
+          }
+          | { ok: false; error: string }
+        >;
+        planExpressionAnalyze: (payload: {
+          workspacePath: string;
+          pos: number;
+          channel: number;
+          output: string;
+        }) => Promise<
+          | { ok: true; task: string; output: string; summary: string }
+          | { ok: false; error: string }
+        >;
+        planKillPredict: (payload: {
+          workspacePath: string;
+          pos: number;
+          modelPath: string;
+          output: string;
+          batchSize?: number;
+        }) => Promise<
+          | { ok: true; task: string; output: string; summary: string }
+          | { ok: false; error: string }
+        >;
+        planTissueAnalyze: (payload: {
+          workspacePath: string;
+          pos: number;
+          channelPhase: number;
+          channelFluorescence: number;
+          method: string;
+          model: string;
+          output: string;
+        }) => Promise<
+          | { ok: true; task: string; output: string; summary: string }
+          | { ok: false; error: string }
+        >;
+        planMovie: (payload: {
+          input_zarr: string;
+          pos: number;
+          crop: number;
+          channel: number;
+          time: string;
+          output: string;
+          fps: number;
+          colormap: string;
+          spots: string | null;
+        }) => Promise<
+          | { ok: true; task: string; output: string; summary: string }
+          | { ok: false; error: string }
+        >;
         runCrop: (payload: {
           taskId: string;
           input_dir: string;

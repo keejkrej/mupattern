@@ -28,13 +28,29 @@ pub struct ConvertArgs {
     /// Skip confirmation prompt
     #[arg(long)]
     pub yes: bool,
+
+    /// Show planned conversion and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
-pub fn run(
-    args: ConvertArgs,
-    progress: impl Fn(f64, &str),
-) -> Result<(), Box<dyn std::error::Error>> {
+#[derive(Debug, Clone)]
+pub struct ConvertPlan {
+    pub positions: Vec<usize>,
+    pub time_indices: Vec<usize>,
+    pub n_pos: usize,
+    pub n_time: usize,
+    pub n_chan: usize,
+    pub n_z: usize,
+    pub total_frames: usize,
+    pub output_path: String,
+}
+
+pub fn plan(
+    args: &ConvertArgs,
+) -> Result<ConvertPlan, Box<dyn std::error::Error>> {
     let output_path = Path::new(&args.output);
+    let output_path = output_path.to_string_lossy().to_string();
 
     let mut nd2 = Nd2File::open(&args.input)?;
     let sizes = nd2.sizes()?;
@@ -43,59 +59,40 @@ pub fn run(
     let n_time = *sizes.get("T").unwrap_or(&1);
     let n_chan = *sizes.get("C").unwrap_or(&1);
     let n_z = *sizes.get("Z").unwrap_or(&1);
-    let height = *sizes.get("Y").unwrap_or(&1);
-    let width = *sizes.get("X").unwrap_or(&1);
 
     let pos_indices = slices::parse_slice_string(&args.pos, n_pos)?;
     let time_indices = slices::parse_slice_string(&args.time, n_time)?;
 
     let total = pos_indices.len() * time_indices.len() * n_chan * n_z;
 
-    eprintln!(
-        "ND2: {} positions, T={}, C={}, Z={}",
-        n_pos, n_time, n_chan, n_z
-    );
-    eprintln!();
-    eprintln!(
-        "Selected {}/{} positions, {}/{} timepoints, {} channels, {} z-slices",
-        pos_indices.len(),
+    Ok(ConvertPlan {
+        positions: pos_indices,
+        time_indices,
         n_pos,
-        time_indices.len(),
         n_time,
         n_chan,
-        n_z
-    );
-    eprintln!("Total frames to write: {}", total);
-    eprintln!();
-    eprintln!("Positions:");
-    eprintln!(
-        "  {}",
-        pos_indices
-            .iter()
-            .map(|i| format!("Pos{}", i))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    eprintln!();
-    eprintln!("Timepoints (original indices):");
-    eprintln!("  {:?}", time_indices);
-    eprintln!();
+        n_z,
+        total_frames: total,
+        output_path,
+    })
+}
 
-    if !args.yes {
-        eprint!("Proceed with conversion? [y/N]: ");
-        use std::io::{self, Write};
-        io::stdout().flush()?;
-        let mut line = String::new();
-        io::stdin().read_line(&mut line)?;
-        if !line.trim().eq_ignore_ascii_case("y") && !line.trim().eq_ignore_ascii_case("yes") {
-            return Err("Aborted".into());
-        }
-    }
+pub fn run(
+    args: ConvertArgs,
+    progress: impl Fn(f64, &str),
+) -> Result<(), Box<dyn std::error::Error>> {
+    let plan = plan(&args)?;
+
+    let mut nd2 = Nd2File::open(&args.input)?;
+    let sizes = nd2.sizes()?;
+    let height = *sizes.get("Y").unwrap_or(&1);
+    let width = *sizes.get("X").unwrap_or(&1);
+    let output_path = Path::new(&plan.output_path);
 
     fs::create_dir_all(output_path)?;
 
     let mut done: usize = 0;
-    for &p_idx in &pos_indices {
+    for &p_idx in &plan.positions {
         let pos_dir = output_path.join(format!("Pos{}", p_idx));
         fs::create_dir_all(&pos_dir)?;
 
@@ -103,14 +100,14 @@ pub fn run(
         let mut csv = BufWriter::new(fs::File::create(&time_map_path)?);
         use std::io::Write;
         writeln!(csv, "t,t_real")?;
-        for (t_new, &t_orig) in time_indices.iter().enumerate() {
+        for (t_new, &t_orig) in plan.time_indices.iter().enumerate() {
             writeln!(csv, "{},{}", t_new, t_orig)?;
         }
         csv.flush()?;
 
-        for (t_new, &t_orig) in time_indices.iter().enumerate() {
-            for c in 0..n_chan {
-                for z in 0..n_z {
+        for (t_new, &t_orig) in plan.time_indices.iter().enumerate() {
+            for c in 0..plan.n_chan {
+                for z in 0..plan.n_z {
                     let channel_data = nd2.read_frame_2d(p_idx, t_orig, c, z)?;
 
                     let fname = format!(
@@ -124,10 +121,10 @@ pub fn run(
                     encoder.write_image::<Gray16>(width as u32, height as u32, &channel_data)?;
 
                     done += 1;
-                    if total > 0 {
+                    if plan.total_frames > 0 {
                         progress(
-                            done as f64 / total as f64,
-                            &format!("Writing TIFFs {}/{}", done, total),
+                            done as f64 / plan.total_frames as f64,
+                            &format!("Writing TIFFs {}/{}", done, plan.total_frames),
                         );
                     }
                 }

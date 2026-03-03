@@ -14,6 +14,101 @@ pub struct ExpressionArgs {
     pub channel: u32,
     #[arg(long)]
     pub output: String,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub yes: bool,
+    /// Show planned expression analysis and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpressionPlan {
+    pub pos: u32,
+    pub channel: u32,
+    pub n_crops: usize,
+    pub n_times: usize,
+    pub n_channels: usize,
+    pub total_rows: usize,
+    pub output: String,
+}
+
+pub fn plan(args: &ExpressionArgs) -> Result<ExpressionPlan, Box<dyn std::error::Error>> {
+    let crops_zarr = Path::new(&args.input);
+    let pos_id = format!("{:03}", args.pos);
+    let crop_root = crops_zarr.join("pos").join(&pos_id).join("crop");
+
+    if !crop_root.exists() {
+        return Ok(ExpressionPlan {
+            pos: args.pos,
+            channel: args.channel,
+            n_crops: 0,
+            n_times: 0,
+            n_channels: 0,
+            total_rows: 1,
+            output: args.output.clone(),
+        });
+    }
+
+    let mut crop_ids: Vec<String> = fs::read_dir(&crop_root)?
+        .filter_map(|e| {
+            let e = e.ok()?;
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().to_str().map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
+    crop_ids.sort();
+
+    if crop_ids.is_empty() {
+        return Ok(ExpressionPlan {
+            pos: args.pos,
+            channel: args.channel,
+            n_crops: 0,
+            n_times: 0,
+            n_channels: 0,
+            total_rows: 1,
+            output: args.output.clone(),
+        });
+    }
+
+    let store = zarr::open_store(&crops_zarr)?;
+
+    let mut total_rows = 0usize;
+    let mut max_times = 0usize;
+    let mut n_channels = 0usize;
+    for crop_id in &crop_ids {
+        let arr = zarr::open_array(&store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
+        let shape = arr.shape();
+        if shape.len() < 2 {
+            continue;
+        }
+        let n_t = shape[0] as usize;
+        max_times = max_times.max(n_t);
+        total_rows += n_t;
+        n_channels = n_channels.max(shape[1] as usize);
+    }
+
+    if n_channels > 0 && (args.channel as usize) >= n_channels {
+        return Err(format!(
+            "Channel {} out of range (0-{})",
+            args.channel,
+            n_channels.saturating_sub(1)
+        )
+        .into());
+    }
+
+    Ok(ExpressionPlan {
+        pos: args.pos,
+        channel: args.channel,
+        n_crops: crop_ids.len(),
+        n_times: max_times,
+        n_channels,
+        total_rows,
+        output: args.output.clone(),
+    })
 }
 
 pub fn run(

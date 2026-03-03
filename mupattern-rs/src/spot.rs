@@ -33,6 +33,96 @@ pub struct SpotArgs {
     pub model: String,
     #[arg(long, help = "Force CPU (skip CUDA)")]
     pub cpu: bool,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub yes: bool,
+    /// Show planned spot detection and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpotPlan {
+    pub pos: u32,
+    pub channel: u32,
+    pub n_crops: usize,
+    pub n_frames: usize,
+    pub selected_crops: usize,
+    pub crop_indices: Vec<usize>,
+    pub output: String,
+}
+
+pub fn plan(args: &SpotArgs) -> Result<SpotPlan, Box<dyn std::error::Error>> {
+    let crops_zarr = Path::new(&args.input);
+    let pos_id = format!("{:03}", args.pos);
+    let crop_root = crops_zarr.join("pos").join(&pos_id).join("crop");
+
+    if !crop_root.exists() {
+        return Err("No crops found for position. Run crop task first.".into());
+    }
+
+    let mut all_crop_ids: Vec<String> = fs::read_dir(&crop_root)?
+        .filter_map(|e| {
+            let e = e.ok()?;
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().to_str().map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
+    all_crop_ids.sort();
+
+    if all_crop_ids.is_empty() {
+        return Err("No crops found for position.".into());
+    }
+
+    let model_path = Path::new(&args.model).join("model.onnx");
+    if !model_path.exists() {
+        return Err(format!(
+            "Model not found at {}. Spotiflow ONNX model must be at {{model}}/model.onnx",
+            model_path.display()
+        )
+        .into());
+    }
+
+    let crop_indices = slices::parse_slice_string(&args.crop, all_crop_ids.len())?;
+    if crop_indices.is_empty() {
+        return Err("No crops selected by --crop".into());
+    }
+
+    let store = zarr::open_store(crops_zarr)?;
+    let mut n_channels = 0usize;
+    let mut n_frames = 0usize;
+    for &crop_index in &crop_indices {
+        let crop_id = &all_crop_ids[crop_index];
+        let arr = zarr::open_array(&store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
+        let shape = arr.shape();
+        if shape.len() < 5 {
+            continue;
+        }
+        n_channels = n_channels.max(shape[1] as usize);
+        n_frames += shape[0] as usize;
+    }
+
+    if n_channels > 0 && (args.channel as usize) >= n_channels {
+        return Err(format!(
+            "Channel {} out of range (0-{})",
+            args.channel,
+            n_channels.saturating_sub(1)
+        )
+        .into());
+    }
+
+    Ok(SpotPlan {
+        pos: args.pos,
+        channel: args.channel,
+        n_crops: all_crop_ids.len(),
+        n_frames,
+        selected_crops: crop_indices.len(),
+        crop_indices,
+        output: args.output.clone(),
+    })
 }
 
 pub fn run(args: SpotArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn std::error::Error>> {

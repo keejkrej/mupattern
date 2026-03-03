@@ -13,7 +13,12 @@ interface ConvertTaskConfigModalProps {
   onClose: () => void;
   /** Default output path = current workspace root. User can change. */
   defaultOutputPath?: string | null;
-  onCreate: (input: string, output: string, pos: string, time: string) => void;
+  onCreate: (
+    input: string,
+    output: string,
+    pos: string,
+    time: string,
+  ) => Promise<boolean>;
 }
 
 export function ConvertTaskConfigModal({
@@ -41,9 +46,9 @@ export function ConvertTaskConfigModal({
     if (result) setOutput(result.path);
   }, []);
 
-  const handleCreate = useCallback(() => {
-    onCreate(input, output, pos, time);
-    onClose();
+  const handleCreate = useCallback(async () => {
+    const ok = await onCreate(input, output, pos, time);
+    if (ok) onClose();
   }, [input, output, pos, time, onCreate, onClose]);
 
   const canCreate = input.trim().length > 0 && output.trim().length > 0;

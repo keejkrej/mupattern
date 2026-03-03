@@ -53,6 +53,116 @@ pub struct TissueArgs {
     /// Force CPU (skip CUDA)
     #[arg(long)]
     pub cpu: bool,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub yes: bool,
+    /// Show planned tissue analysis and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TissuePlan {
+    pub pos: u32,
+    pub channel_phase: u32,
+    pub channel_fluorescence: u32,
+    pub method: String,
+    pub n_crops: usize,
+    pub n_frames: usize,
+    pub output: String,
+}
+
+pub fn plan(args: &TissueArgs) -> Result<TissuePlan, Box<dyn std::error::Error>> {
+    let crops_zarr = Path::new(&args.input);
+    let pos_id = format!("{:03}", args.pos);
+    let crop_root = crops_zarr.join("pos").join(&pos_id).join("crop");
+
+    if !crop_root.exists() {
+        return Err("No crops found. Run crop task first.".into());
+    }
+
+    let mut crop_ids: Vec<String> = fs::read_dir(&crop_root)?
+        .filter_map(|e| {
+            let e = e.ok()?;
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().to_str().map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
+    crop_ids.sort();
+    if crop_ids.is_empty() {
+        return Err("No crops found.".into());
+    }
+
+    let model_dir = Path::new(&args.model);
+    let method = args.method.as_str();
+    if method == "cellpose" {
+        let model_file = model_dir.join("model.onnx");
+        if !model_file.exists() {
+            return Err(format!(
+                "Cellpose model not found at {}. Export with: python scripts/export_onnx.py",
+                model_file.display()
+            )
+            .into());
+        }
+    } else if method == "cellsam" {
+        for name in [
+            "image_encoder.onnx",
+            "cellfinder.onnx",
+            "mask_decoder.onnx",
+            "image_pe.npy",
+        ] {
+            if !model_dir.join(name).exists() {
+                return Err(format!("CellSAM model file not found: {}/{}", model_dir.display(), name).into());
+            }
+        }
+    } else {
+        return Err(format!("Unknown method {method:?}. Use 'cellpose' or 'cellsam'.").into());
+    }
+
+    let store = zarr::open_store(&crops_zarr)?;
+    let mut n_frames = 0usize;
+    let mut max_channel = 0usize;
+    for crop_id in &crop_ids {
+        let arr = zarr::open_array(&store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
+        let shape = arr.shape();
+        if shape.len() < 5 {
+            continue;
+        }
+        max_channel = max_channel.max(shape[1] as usize);
+        n_frames += shape[0] as usize;
+    }
+
+    if max_channel > 0 {
+        if (args.channel_phase as usize) >= max_channel {
+            return Err(format!(
+                "Channel phase {} out of range (0-{})",
+                args.channel_phase,
+                max_channel.saturating_sub(1)
+            )
+            .into());
+        }
+        if (args.channel_fluorescence as usize) >= max_channel {
+            return Err(format!(
+                "Channel fluorescence {} out of range (0-{})",
+                args.channel_fluorescence,
+                max_channel.saturating_sub(1)
+            )
+            .into());
+        }
+    }
+
+    Ok(TissuePlan {
+        pos: args.pos,
+        channel_phase: args.channel_phase,
+        channel_fluorescence: args.channel_fluorescence,
+        method: args.method.clone(),
+        n_crops: crop_ids.len(),
+        n_frames,
+        output: args.output.clone(),
+    })
 }
 
 // ---------------------------------------------------------------------------

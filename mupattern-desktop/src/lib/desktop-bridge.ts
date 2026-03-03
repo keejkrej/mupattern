@@ -172,9 +172,15 @@ function subscribeProgress(
         message: event.payload.message,
       });
     },
-  ).then((fn) => {
-    unlisten = fn;
-  });
+  )
+    .then((fn) => {
+      unlisten = fn;
+    })
+    .catch((error) => {
+      // If progress permissions are not available in the current capability set, keep
+      // the frontend functional via polling from listTasks().
+      console.warn("Progress events disabled:", error);
+    });
   return () => unlisten?.();
 }
 
@@ -249,6 +255,12 @@ function ensureBridge() {
       pickND2Input: () => invoke("tasks_pick_nd2_input"),
       pickConvertOutput: () => invoke("tasks_pick_convert_output"),
       hasBboxCsv: (payload) => invoke("tasks_has_bbox_csv", { payload }),
+      planConvert: (payload) => invoke("tasks_plan_convert", { payload }),
+      planCrop: (payload) => invoke("tasks_plan_crop", { payload }),
+      planExpressionAnalyze: (payload) => invoke("tasks_plan_expression_analyze", { payload }),
+      planKillPredict: (payload) => invoke("tasks_plan_kill_predict", { payload }),
+      planTissueAnalyze: (payload) => invoke("tasks_plan_tissue_analyze", { payload }),
+      planMovie: (payload) => invoke("tasks_plan_movie", { payload }),
       startCrop: (payload) => invoke("tasks_start_crop", { payload }),
       runCrop: (payload) => invoke("tasks_run_crop", { payload }),
       onCropProgress: (callback) =>

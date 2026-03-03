@@ -35,6 +35,23 @@ pub struct KillArgs {
     /// Force CPU (skip CUDA). Use if GPU path hangs.
     #[arg(long)]
     pub cpu: bool,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub yes: bool,
+    /// Show planned kill prediction and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct KillPlan {
+    pub pos: u32,
+    pub model: String,
+    pub n_crops: usize,
+    pub n_frames: usize,
+    pub n_channels: usize,
+    pub batch_size: usize,
+    pub output: String,
 }
 
 struct CropFrame {
@@ -51,6 +68,66 @@ struct FrameIndex {
     t: u64,
     height: u64,
     width: u64,
+}
+
+pub fn plan(args: &KillArgs) -> Result<KillPlan, Box<dyn std::error::Error>> {
+    let crops_zarr = Path::new(&args.input);
+    let pos_id = format!("{:03}", args.pos);
+    let crop_root = crops_zarr.join("pos").join(&pos_id).join("crop");
+
+    if !crop_root.exists() {
+        return Err("No crops found for position. Run crop task first.".into());
+    }
+
+    let crop_ids: Vec<String> = fs::read_dir(&crop_root)?
+        .filter_map(|e| {
+            let e = e.ok()?;
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().to_str().map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut crop_ids = crop_ids;
+    crop_ids.sort();
+
+    if crop_ids.is_empty() {
+        return Err("No crops found for position.".into());
+    }
+
+    let model_path = Path::new(&args.model).join("model.onnx");
+    if !model_path.exists() {
+        return Err(format!(
+            "Model not found at {}. Export with: uv run optimum-cli export onnx ...",
+            model_path.display()
+        )
+        .into());
+    }
+
+    let store = zarr::open_store(&crops_zarr)?;
+
+    let mut n_channels = 0usize;
+    let mut total_frames = 0usize;
+    for crop_id in &crop_ids {
+        let arr = zarr::open_array(&store, &format!("/pos/{}/crop/{}", pos_id, crop_id))?;
+        let shape = arr.shape();
+        if shape.len() < 4 {
+            continue;
+        }
+        n_channels = n_channels.max(shape[1] as usize);
+        total_frames += shape[0] as usize;
+    }
+
+    Ok(KillPlan {
+        pos: args.pos,
+        model: args.model.clone(),
+        n_crops: crop_ids.len(),
+        n_frames: total_frames,
+        n_channels,
+        batch_size: args.batch_size,
+        output: args.output.clone(),
+    })
 }
 
 /// Build ONNX session. Tries CUDA if use_cuda; on CUDA failure falls back to CPU.

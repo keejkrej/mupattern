@@ -28,6 +28,63 @@ pub struct MovieArgs {
     pub spots: Option<String>,
     #[arg(long)]
     pub ffmpeg: String,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub yes: bool,
+    /// Show planned movie generation and exit without writing output
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MoviePlan {
+    pub pos: u32,
+    pub crop: u32,
+    pub channel: u32,
+    pub n_times: usize,
+    pub selected_times: usize,
+    pub n_channels: usize,
+    pub output: String,
+}
+
+pub fn plan(args: &MovieArgs) -> Result<MoviePlan, Box<dyn std::error::Error>> {
+    let zarr_path = Path::new(&args.input);
+    let crop_id = format!("{:03}", args.crop);
+    let pos_id = format!("{:03}", args.pos);
+
+    let store = zarr::open_store(zarr_path)?;
+    let array_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
+    let arr = zarr::open_array(&store, &array_path)?;
+    let shape = arr.shape();
+    if shape.len() < 5 {
+        return Err("Invalid crop array shape".into());
+    }
+
+    let n_times = shape[0] as usize;
+    let n_channels = shape[1] as usize;
+    if args.channel >= n_channels as u32 {
+        return Err(format!(
+            "Channel {} out of range (0-{})",
+            args.channel,
+            n_channels.saturating_sub(1)
+        )
+        .into());
+    }
+
+    let time_indices = slices::parse_slice_string(&args.time, n_times)?;
+    if time_indices.is_empty() {
+        return Err("No frames to write".into());
+    }
+
+    Ok(MoviePlan {
+        pos: args.pos,
+        crop: args.crop,
+        channel: args.channel,
+        n_times,
+        selected_times: time_indices.len(),
+        n_channels,
+        output: args.output.clone(),
+    })
 }
 
 pub fn run(
