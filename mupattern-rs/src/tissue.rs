@@ -321,11 +321,13 @@ fn run_segment(
             let mask_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
             let mut attrs = serde_json::Map::new();
             attrs.insert("axis_names".to_string(), serde_json::json!(["t", "y", "x"]));
+            let shape = vec![n_t as u64, h as u64, w as u64];
             let mask_arr = zarr::create_array_u16(
                 &mask_store,
                 &mask_path,
-                vec![n_t as u64, h as u64, w as u64],
+                shape.clone(),
                 vec![1, h as u64, w as u64],
+                zarr::shard_shape_t_first(&shape),
                 Some(attrs),
             )?;
 
@@ -366,11 +368,13 @@ fn run_segment(
             let mask_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
             let mut attrs = serde_json::Map::new();
             attrs.insert("axis_names".to_string(), serde_json::json!(["t", "y", "x"]));
+            let shape = vec![n_t as u64, h as u64, w as u64];
             let mask_arr = zarr::create_array_u16(
                 &mask_store,
                 &mask_path,
-                vec![n_t as u64, h as u64, w as u64],
+                shape.clone(),
                 vec![1, h as u64, w as u64],
+                zarr::shard_shape_t_first(&shape),
                 Some(attrs),
             )?;
 

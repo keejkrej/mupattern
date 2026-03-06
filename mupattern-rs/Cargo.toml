@@ -22,9 +22,12 @@ ndarray = "0.17"
 ort = { version = "2.0.0-rc.11", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-native", "copy-dylibs"] }
 tiff = "0.11"
 image = "0.25"
-zarrs = { version = "0.23", default-features = false, features = ["filesystem", "blosc"] }
+zarrs = { version = "0.23", default-features = false, features = ["filesystem", "blosc", "sharding", "crc32c", "zstd"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 indicatif = "0.17"
 regex = "1"
 csv = "1"
+
+[dev-dependencies]
+tempfile = "3"

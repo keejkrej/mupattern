@@ -28,6 +28,10 @@ def _draw_marker(
 _TIFF_RE = re.compile(r"img_channel(\d+)_position(\d+)_time(\d+)_z(\d+)\.tif")
 
 
+def _shard_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    return (min(64, shape[0]), *shape[1:])
+
+
 def _discover_tiffs(pos_dir: Path) -> dict[tuple[int, int, int], Path]:
     """Return {(channel, time, z): path} for every TIFF in *pos_dir*."""
     index: dict[tuple[int, int, int], Path] = {}
@@ -103,12 +107,15 @@ def run_crop(
 
     arrays: list[zarr.Array] = []
     for i, bb in enumerate(bboxes):
-        arr = crop_grp.zeros(
-            name=f"{i:03d}",
+        shape = (n_times, n_channels, n_z, bb["h"], bb["w"])
+        arr = crop_grp.create_array(
+            f"{i:03d}",
             shape=(n_times, n_channels, n_z, bb["h"], bb["w"]),
             chunks=(1, 1, 1, bb["h"], bb["w"]),
+            shards=_shard_shape(shape),
             dtype=dtype,
             overwrite=True,
+            fill_value=0,
         )
         arr.attrs["axis_names"] = ["t", "c", "z", "y", "x"]
         arr.attrs["bbox"] = bb
@@ -121,12 +128,15 @@ def run_crop(
             x, y, w, h = bb["x"], bb["y"], bb["w"], bb["h"]
             mask[y : y + h, x : x + w] = True
 
-        bg_arr = root.zeros(
-            name=f"pos/{pos:03d}/background",
+        bg_shape = (n_times, n_channels, n_z)
+        bg_arr = root.create_array(
+            f"pos/{pos:03d}/background",
             shape=(n_times, n_channels, n_z),
             chunks=(1, 1, 1),
+            shards=_shard_shape(bg_shape),
             dtype=np.uint16,
             overwrite=True,
+            fill_value=0,
         )
         bg_arr.attrs["axis_names"] = ["t", "c", "z"]
         bg_arr.attrs["description"] = "Median of pixels outside all crop bounding boxes"

@@ -287,21 +287,30 @@ pub fn run(args: CropArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn s
         let crop_id = format!("{:03}", i);
         let array_path = format!("/pos/{}/crop/{}", pos_id, crop_id);
         let shape = vec![n_times_u, n_channels_u, n_z_u, bb.h as u64, bb.w as u64];
-        let chunks = vec![1, 1, 1, bb.h as u64, bb.w as u64];
+        let chunk_shape = vec![1, 1, 1, bb.h as u64, bb.w as u64];
+        let shard_shape = zarr::shard_shape_t_first(&shape);
         let attrs = serde_json::json!({
             "axis_names": ["t", "c", "z", "y", "x"],
             "bbox": {"x": bb.x, "y": bb.y, "w": bb.w, "h": bb.h}
         })
         .as_object()
         .cloned();
-        let arr = zarr::create_array_u16(&store, &array_path, shape, chunks, attrs)?;
+        let arr = zarr::create_array_u16(
+            &store,
+            &array_path,
+            shape,
+            chunk_shape,
+            shard_shape,
+            attrs,
+        )?;
         crop_arrays.push(arr);
     }
 
     let bg_array: Option<zarr::StoreArray> = if args.background {
         let bg_path = format!("/pos/{}/background", pos_id);
         let shape = vec![n_times_u, n_channels_u, n_z_u];
-        let chunks = vec![1, 1, 1];
+        let chunk_shape = vec![1, 1, 1];
+        let shard_shape = zarr::shard_shape_t_first(&shape);
         let attrs = serde_json::json!({
             "axis_names": ["t", "c", "z"],
             "description": "Median of pixels outside all crop bounding boxes"
@@ -309,7 +318,12 @@ pub fn run(args: CropArgs, progress: impl Fn(f64, &str)) -> Result<(), Box<dyn s
         .as_object()
         .cloned();
         Some(zarr::create_array_u16(
-            &store, &bg_path, shape, chunks, attrs,
+            &store,
+            &bg_path,
+            shape,
+            chunk_shape,
+            shard_shape,
+            attrs,
         )?)
     } else {
         None
