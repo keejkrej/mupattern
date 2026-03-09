@@ -11,9 +11,6 @@ electron-dist/
 target/
 release/
 
-# Lockfiles (optional - can be committed)
-bun.lock
-
 # Editor/IDE
 .idea/
 .vscode/
