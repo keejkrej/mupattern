@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import re
 from pathlib import Path
 
@@ -12,17 +11,6 @@ import zarr
 
 from ...common.slices import parse_slice_string
 from ...common.progress import ProgressCallback
-
-
-def _draw_marker(
-    frame: np.ndarray, y: int, x: int, h: int, w: int, size: int = 1
-) -> None:
-    """Draw a white diagonal cross (X) at (y, x), overwriting pixels."""
-    white = 255 if len(frame.shape) == 2 else np.array([255, 255, 255], dtype=np.uint8)
-    for d in range(-size, size + 1):
-        for yy, xx in [(y + d, x + d), (y + d, x - d)]:
-            if 0 <= yy < h and 0 <= xx < w:
-                frame[yy, xx] = white
 
 
 _TIFF_RE = re.compile(r"img_channel(\d+)_position(\d+)_time(\d+)_z(\d+)\.tif")
@@ -167,13 +155,10 @@ def run_movie(
     output: Path,
     fps: int,
     colormap: str,
-    spots_path: Path | None = None,
     *,
     on_progress: ProgressCallback | None = None,
 ) -> None:
     """Create a movie from a zarr crop."""
-    import csv
-
     import imageio
     import matplotlib.cm as cm
 
@@ -194,17 +179,6 @@ def run_movie(
         )
 
     time_indices = parse_slice_string(time_slice, n_times)
-
-    spots_by_t_crop: dict[tuple[int, str], list[tuple[float, float]]] = {}
-    if spots_path is not None:
-        with open(spots_path, newline="") as fh:
-            for row in csv.DictReader(fh):
-                t_val = int(row["t"])
-                c = row["crop"]
-                y_val = float(row["y"])
-                x_val = float(row["x"])
-                key = (t_val, c)
-                spots_by_t_crop.setdefault(key, []).append((y_val, x_val))
 
     frames_raw = []
     for i, t in enumerate(time_indices):
@@ -239,18 +213,6 @@ def run_movie(
             frame_uint8 = (colored[:, :, :3] * 255).astype(np.uint8)
 
         frames.append(frame_uint8)
-
-    if spots_path is not None and spots_by_t_crop:
-        for i, t_val in enumerate(time_indices):
-            key = (t_val, crop_id)
-            spot_list = spots_by_t_crop.get(key)
-            if spot_list is None:
-                continue
-            frame = frames[i]
-            h, w = frame.shape[0], frame.shape[1]
-            for y_f, x_f in spot_list:
-                y_p, x_p = int(round(y_f)), int(round(x_f))
-                _draw_marker(frame, y_p, x_p, h, w)
 
     if frames:
         if len(frames[0].shape) == 2:

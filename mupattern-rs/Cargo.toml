@@ -2,7 +2,7 @@
 name = "mupattern-rs"
 version = "0.3.5"
 edition = "2021"
-description = "Rust CLI for mupattern: crop, expression, movie"
+description = "Rust CLI for mupattern killing-assay workflows"
 
 [features]
 default = ["cuda"]
@@ -13,9 +13,6 @@ name = "mupattern"
 path = "src/main.rs"
 
 [dependencies]
-cellpose-rs = { git = "https://github.com/keejkrej/cellpose-rs" }
-spotiflow-rs = { git = "https://github.com/keejkrej/spotiflow-rs" }
-cellsam-rs = { git = "https://github.com/keejkrej/cellsam-rs" }
 clap = { version = "4", features = ["derive"] }
 nd2-rs = "0.1.6"
 ndarray = "0.17"

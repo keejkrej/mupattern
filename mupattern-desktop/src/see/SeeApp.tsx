@@ -27,7 +27,6 @@ export default function SeeApp() {
       output: string;
       fps: number;
       colormap: string;
-      spots: string | null;
     }) => {
       void createMovieTask(params);
     },

@@ -14,11 +14,12 @@ def _progress_echo(progress: float, message: str) -> None:
     typer.echo(message)
 
 
-app = typer.Typer(add_completion=False, help="Train models.")
+app = typer.Typer(add_completion=False, rich_markup_mode=None, help="Train models.")
 
 kill_app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
+    rich_markup_mode=None,
     help="Train kill-curve classifier.",
 )
 

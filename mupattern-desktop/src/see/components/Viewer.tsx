@@ -1,14 +1,9 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useStore } from "@tanstack/react-store";
 import type { StoreIndex, CropInfo, ZarrStore } from "@/see/lib/zarr";
-import { loadFrame, loadMaskFrame, hasMasks } from "@/see/lib/zarr";
+import { loadFrame } from "@/see/lib/zarr";
 import { loadBatchWithRetryOnTotalFailure } from "@/see/lib/frame-loader";
-import {
-  renderUint16ToCanvas,
-  drawSpots,
-  drawMaskContours,
-} from "@mupattern/shared/see/lib/render";
-import { labelMapToContours } from "@mupattern/shared/see/lib/contours";
+import { renderUint16ToCanvas } from "@mupattern/shared/see/lib/render";
 import {
   type Annotations,
   annotationKey,
@@ -16,12 +11,9 @@ import {
   downloadCSV,
   uploadCSV,
 } from "@mupattern/shared/see/lib/annotations";
-import { type SpotMap, spotKey, uploadSpotCSV } from "@mupattern/shared/see/lib/spots";
 import {
   viewerStore,
   setAnnotations as persistAnnotations,
-  setSpots as persistSpots,
-  setMasksPath as persistMasksPath,
   setSelectedPos as persistSelectedPos,
   setT as persistT,
   setC as persistC,
@@ -30,8 +22,6 @@ import {
   setContrast as persistContrast,
   setAnnotating as persistAnnotating,
   setShowAnnotations as persistShowAnnotations,
-  setShowSpots as persistShowSpots,
-  setShowMasks as persistShowMasks,
 } from "@/see/store";
 import { AppHeader, Slider, Button } from "@mupattern/shared";
 import { LeftSliceSidebar } from "@/see/components/LeftSliceSidebar";
@@ -49,22 +39,19 @@ import {
   Pencil,
   Eye,
   EyeOff,
-  Crosshair,
   Film,
 } from "lucide-react";
 import { toast } from "sonner";
 
-const PAGE_SIZE = 9; // 3x3
+const PAGE_SIZE = 9;
 
 interface ViewerProps {
   store: ZarrStore;
   index: StoreIndex;
-  /** Opens movie task config modal instead of creating with defaults. */
   onSaveAsMovie?: (pos: string, cropId: string) => void;
 }
 
 export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
-  // Persisted state from store
   const selectedPos = useStore(viewerStore, (s) => s.selectedPos);
   const t = useStore(viewerStore, (s) => s.t);
   const c = useStore(viewerStore, (s) => s.c);
@@ -74,50 +61,22 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
   const contrastMax = useStore(viewerStore, (s) => s.contrastMax);
   const annotating = useStore(viewerStore, (s) => s.annotating);
   const annotationEntries = useStore(viewerStore, (s) => s.annotations);
-  const spotEntries = useStore(viewerStore, (s) => s.spots);
   const showAnnotations = useStore(viewerStore, (s) => s.showAnnotations);
-  const showSpots = useStore(viewerStore, (s) => s.showSpots);
-  const showMasks = useStore(viewerStore, (s) => s.showMasks);
-  const masksPath = useStore(viewerStore, (s) => s.masksPath);
 
-  // Derive annotations Map from persisted entries
   const annotations: Annotations = useMemo(() => new Map(annotationEntries), [annotationEntries]);
 
-  // Derive spots Map from persisted entries
-  const spots: SpotMap = useMemo(() => new Map(spotEntries), [spotEntries]);
-
-  // Ephemeral state
   const [playing, setPlaying] = useState(false);
   const [frameLoadError, setFrameLoadError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; crop: CropInfo } | null>(
     null,
   );
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [workspaceHasMasks, setWorkspaceHasMasks] = useState(false);
   const [autoContrastDone, setAutoContrastDone] = useState(true);
 
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const refreshedKeysRef = useRef<Set<string>>(new Set());
 
-  // Validate persisted selectedPos against available positions
   const validPos = index.positions.includes(selectedPos) ? selectedPos : (index.positions[0] ?? "");
 
-  useEffect(() => {
-    if (!masksPath) {
-      setWorkspaceHasMasks(false);
-      return;
-    }
-    let cancelled = false;
-    hasMasks(masksPath).then((v) => {
-      if (!cancelled) setWorkspaceHasMasks(v);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [masksPath]);
-
-  // Sync if the persisted pos was invalid
   useEffect(() => {
     if (validPos !== selectedPos) {
       persistSelectedPos(validPos);
@@ -135,7 +94,6 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
   const clampedPage = Math.min(page, Math.max(0, totalPages - 1));
   const pageCrops = crops.slice(clampedPage * PAGE_SIZE, (clampedPage + 1) * PAGE_SIZE);
 
-  // Sync clamped values back if needed
   useEffect(() => {
     if (clampedT !== t) persistT(clampedT);
   }, [clampedT, t]);
@@ -149,16 +107,13 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
     if (clampedPage !== page) persistPage(clampedPage);
   }, [clampedPage, page]);
 
-  // Wrapped setters that persist
-  const setT = useCallback((v: number) => persistT(v), []);
-  const setPage = useCallback((v: number) => persistPage(v), []);
-  const setContrastMin = useCallback((v: number) => persistContrast(v, contrastMax), [contrastMax]);
-  const setContrastMax = useCallback((v: number) => persistContrast(contrastMin, v), [contrastMin]);
-  const setAnnotating = useCallback((v: boolean) => persistAnnotating(v), []);
-  const setAnnotations = useCallback((a: Annotations) => persistAnnotations(a), []);
-  const setSpots = useCallback((s: SpotMap) => persistSpots(s), []);
+  const setT = useCallback((value: number) => persistT(value), []);
+  const setPage = useCallback((value: number) => persistPage(value), []);
+  const setContrastMin = useCallback((value: number) => persistContrast(value, contrastMax), [contrastMax]);
+  const setContrastMax = useCallback((value: number) => persistContrast(contrastMin, value), [contrastMin]);
+  const setAnnotating = useCallback((value: boolean) => persistAnnotating(value), []);
+  const setAnnotations = useCallback((value: Annotations) => persistAnnotations(value), []);
 
-  // Playback
   useEffect(() => {
     if (playing) {
       playIntervalRef.current = setInterval(() => {
@@ -171,10 +126,8 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
     };
   }, [playing, maxT]);
 
-  // Load visible crops and render
   useEffect(() => {
     let cancelled = false;
-    const renderKey = `${validPos}:${clampedT}:${clampedC}:${clampedZ}:${clampedPage}`;
 
     async function loadPage() {
       const frameResults = await loadBatchWithRetryOnTotalFailure(pageCrops, async (crop) => {
@@ -187,23 +140,21 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
           );
         }
       });
-      const frames = frameResults.map((r) => r.value);
-
       if (cancelled) return;
-      const firstError = frameResults.find((r) => r.error)?.error ?? null;
+
+      const frames = frameResults.map((result) => result.value);
+      const firstError = frameResults.find((result) => result.error)?.error ?? null;
       setFrameLoadError(firstError);
 
       let renderContrastMin = contrastMin;
       let renderContrastMax = contrastMax;
 
-      // Compute auto-contrast from all visible crops combined
       if (!autoContrastDone) {
         const allData: number[] = [];
-        for (const f of frames) {
-          if (f) {
-            for (let i = 0; i < f.data.length; i++) {
-              allData.push(f.data[i]);
-            }
+        for (const frame of frames) {
+          if (!frame) continue;
+          for (let i = 0; i < frame.data.length; i += 1) {
+            allData.push(frame.data[i]);
           }
         }
         if (allData.length > 0) {
@@ -218,10 +169,10 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
         }
       }
 
-      // Render each crop
-      for (let i = 0; i < pageCrops.length; i++) {
+      for (let i = 0; i < pageCrops.length; i += 1) {
         const frame = frames[i];
-        const canvas = canvasRefs.current.get(canvasKey(pageCrops[i].posId, pageCrops[i].cropId));
+        const crop = pageCrops[i];
+        const canvas = canvasRefs.current.get(canvasKey(crop.posId, crop.cropId));
         if (!frame || !canvas) continue;
         renderUint16ToCanvas(
           canvas,
@@ -231,58 +182,22 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
           renderContrastMin,
           renderContrastMax,
         );
-        // Overlay spots
-        if (showSpots) {
-          const key = spotKey(validPos, clampedT, pageCrops[i].cropId);
-          const cropSpots = spots.get(key);
-          if (cropSpots) drawSpots(canvas, cropSpots);
-        }
-        // Overlay mask contours
-        if (showMasks && workspaceHasMasks && masksPath) {
-          try {
-            const mask = await loadMaskFrame(
-              masksPath,
-              pageCrops[i].posId,
-              pageCrops[i].cropId,
-              clampedT,
-            );
-            const contours = labelMapToContours(mask.data, mask.width, mask.height);
-            drawMaskContours(canvas, contours);
-          } catch {
-            // no mask for this crop or load failed
-          }
-        }
-      }
-
-      // Force one follow-up repaint after initial data fetch for this view key.
-      if (!refreshedKeysRef.current.has(renderKey)) {
-        refreshedKeysRef.current.add(renderKey);
-        requestAnimationFrame(() => {
-          if (!cancelled) setRefreshTick((v) => v + 1);
-        });
       }
     }
 
-    loadPage();
+    void loadPage();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     store,
-    validPos,
+    pageCrops,
     clampedT,
     clampedC,
     clampedZ,
-    clampedPage,
     contrastMin,
     contrastMax,
     autoContrastDone,
-    spots,
-    showSpots,
-    showMasks,
-    workspaceHasMasks,
-    refreshTick,
   ]);
 
   const setCanvasRef = useCallback(
@@ -300,7 +215,6 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
     setAutoContrastDone(false);
   }, []);
 
-  // Annotation handler: click cycles true → false → remove
   const handleAnnotate = useCallback(
     (cropId: string) => {
       const key = annotationKey(validPos, clampedT, cropId);
@@ -325,35 +239,13 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
   const handleLoad = useCallback(async () => {
     try {
       const loaded = await uploadCSV(validPos);
-      // Merge with existing annotations (preserving other positions)
       const merged = new Map(annotations);
-      for (const [k, v] of loaded) merged.set(k, v);
+      for (const [key, value] of loaded) merged.set(key, value);
       setAnnotations(merged);
     } catch {
       // user cancelled
     }
   }, [validPos, annotations, setAnnotations]);
-
-  const handleLoadSpots = useCallback(async () => {
-    try {
-      const loaded = await uploadSpotCSV(validPos);
-      // Merge with existing spots (preserving other positions)
-      const merged = new Map(spots);
-      for (const [k, v] of loaded) merged.set(k, v);
-      setSpots(merged);
-    } catch {
-      // user cancelled
-    }
-  }, [validPos, spots, setSpots]);
-
-  const handleLoadMasks = useCallback(async () => {
-    try {
-      const result = await window.mupatternDesktop.zarr.pickMasksDirectory();
-      if (result) persistMasksPath(result.path);
-    } catch (e) {
-      setFrameLoadError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
 
   const handleSaveAsMovie = useCallback(
     (crop: CropInfo) => {
@@ -382,17 +274,15 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
     return () => window.removeEventListener("click", close);
   }, [contextMenu]);
 
-  // Build set of cropIds that have any annotation (at any timepoint) for current position
   const annotatedCrops = useMemo(() => {
-    const s = new Set<string>();
+    const cropsWithAnnotations = new Set<string>();
     for (const [key] of annotations) {
       const { pos, cropId } = parseKey(key);
-      if (pos === validPos) s.add(cropId);
+      if (pos === validPos) cropsWithAnnotations.add(cropId);
     }
-    return s;
+    return cropsWithAnnotations;
   }, [annotations, validPos]);
 
-  // Border color for annotation state (only when visible)
   function borderClass(cropId: string): string {
     if (!showAnnotations) return "";
     const key = annotationKey(validPos, clampedT, cropId);
@@ -403,16 +293,6 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
     return "";
   }
 
-  // Count spots visible at current timepoint
-  const spotCount = useMemo(() => {
-    let count = 0;
-    for (const [key, list] of spots) {
-      const [pos, tStr] = key.split(":");
-      if (pos === validPos && parseInt(tStr, 10) === clampedT) count += list.length;
-    }
-    return count;
-  }, [spots, validPos, clampedT]);
-
   return (
     <div className="flex flex-col h-screen">
       <AppHeader title="See" backTo="/workspace" />
@@ -422,10 +302,8 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
         </div>
       )}
 
-      {/* Main area: crop grid + sidebars */}
       <div className="flex flex-1 overflow-hidden">
         <LeftSliceSidebar />
-        {/* Crop grid with contrast above */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="shrink-0 grid grid-cols-3 items-center gap-4 px-4 py-2 border-b border-border">
             <div className="flex items-center gap-2">
@@ -474,7 +352,6 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
               t = {clampedT} / {maxT}
             </span>
           </div>
-          {/* Frame control */}
           <div className="shrink-0 border-b border-border flex flex-col gap-2 px-4 py-2">
             <div className="flex items-center justify-center gap-2">
               <Button
@@ -544,7 +421,7 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
               min={0}
               max={maxT}
               value={[clampedT]}
-              onValueChange={([v]) => setT(v)}
+              onValueChange={([value]) => setT(value)}
               className="w-full"
             />
           </div>
@@ -574,9 +451,7 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
           </div>
         </div>
 
-        {/* Right sidebar: overlays */}
         <aside className="w-64 flex-shrink-0 border-l border-border p-3 flex flex-col gap-4 text-sm overflow-y-auto">
-          {/* Annotations section */}
           <div className="flex flex-col gap-2">
             <h3 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">
               Annotations
@@ -592,12 +467,7 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
               {annotating ? "Annotating" : "Annotate"}
             </Button>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={handleLoad}
-                title="Load annotations CSV"
-              >
+              <Button variant="ghost" size="icon-xs" onClick={handleLoad} title="Load annotations CSV">
                 <Upload className="size-3.5" />
               </Button>
               <Button
@@ -625,92 +495,9 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
               </Button>
             )}
           </div>
-
-          <div className="h-px bg-border" />
-
-          {/* Spots section */}
-          <div className="flex flex-col gap-2">
-            <h3 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">
-              Spots
-            </h3>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="justify-start"
-              onClick={handleLoadSpots}
-              title="Load spots CSV"
-            >
-              <Crosshair className="size-3" />
-              Load CSV
-            </Button>
-            {spots.size > 0 && (
-              <>
-                <span className="text-muted-foreground tabular-nums text-xs">
-                  {spotCount} spots (t={clampedT})
-                </span>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="justify-start"
-                  onClick={() => persistShowSpots(!showSpots)}
-                >
-                  {showSpots ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-                  {showSpots ? "Visible" : "Hidden"}
-                </Button>
-              </>
-            )}
-          </div>
-
-          <div className="h-px bg-border" />
-          <div className="flex flex-col gap-2">
-            <h3 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">
-              Masks
-            </h3>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="justify-start"
-              onClick={handleLoadMasks}
-              title="Load masks zarr folder"
-            >
-              <Upload className="size-3.5" />
-              Load
-            </Button>
-            {masksPath != null && (
-              <>
-                <div className="flex items-center gap-1">
-                  <p
-                    className="text-xs text-muted-foreground truncate flex-1 min-w-0"
-                    title={masksPath}
-                  >
-                    {masksPath.split(/[/\\]/).filter(Boolean).pop() ?? "Masks"}
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => persistMasksPath(null)}
-                    title="Clear masks"
-                  >
-                    ×
-                  </Button>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="justify-start"
-                  onClick={() => persistShowMasks(!showMasks)}
-                  title="Toggle mask contours"
-                >
-                  {showMasks ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-                  {showMasks ? "Contours visible" : "Contours hidden"}
-                </Button>
-              </>
-            )}
-          </div>
         </aside>
       </div>
 
-      {/* Crop context menu */}
       {contextMenu && (
         <div
           data-context-menu
@@ -730,6 +517,7 @@ export function Viewer({ store, index, onSaveAsMovie }: ViewerProps) {
     </div>
   );
 }
+
 function canvasKey(posId: string, cropId: string): string {
   return `${posId}:${cropId}`;
 }

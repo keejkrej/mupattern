@@ -14,7 +14,7 @@ def _progress_echo(progress: float, message: str) -> None:
     typer.echo(message)
 
 
-app = typer.Typer(add_completion=False, help="Create training datasets.")
+app = typer.Typer(add_completion=False, rich_markup_mode=None, help="Create training datasets.")
 
 
 @app.command("kill")

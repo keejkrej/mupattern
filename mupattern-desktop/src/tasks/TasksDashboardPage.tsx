@@ -4,13 +4,16 @@ import { useStore } from "@tanstack/react-store";
 import { AppHeader, Button } from "@mupattern/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { workspaceStore } from "@/workspace/store";
-import { getVisibleTaskKinds } from "@/lib/workspace-tags";
 import { CropTaskConfigModal } from "@/tasks/components/CropTaskConfigModal";
 import { ConvertTaskConfigModal } from "@/tasks/components/ConvertTaskConfigModal";
 import { MovieTaskConfigModal } from "@/tasks/components/MovieTaskConfigModal";
-import { ExpressionTaskConfigModal } from "@/tasks/components/ExpressionTaskConfigModal";
 import { KillTaskConfigModal } from "@/tasks/components/KillTaskConfigModal";
-import { TissueTaskConfigModal } from "@/tasks/components/TissueTaskConfigModal";
+
+interface KillRow {
+  t: number;
+  crop: string;
+  label: boolean;
+}
 
 interface TaskRecord {
   id: string;
@@ -23,17 +26,7 @@ interface TaskRecord {
   result:
     | {
         output?: string;
-        rows?:
-          | Array<{ t: number; crop: string; intensity: number; area: number; background: number }>
-          | Array<{ t: number; crop: string; label: boolean }>
-          | Array<{
-              t: number;
-              crop: string;
-              cell: number;
-              total_fluorescence: number;
-              cell_area: number;
-              background: number;
-            }>;
+        rows?: KillRow[];
       }
     | Record<string, unknown>
     | null;
@@ -52,16 +45,14 @@ export default function TasksDashboardPage() {
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [movieModalOpen, setMovieModalOpen] = useState(false);
-  const [expressionModalOpen, setExpressionModalOpen] = useState(false);
   const [killModalOpen, setKillModalOpen] = useState(false);
-  const [tissueModalOpen, setTissueModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const progressUnsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     window.mupatternDesktop.tasks.listTasks().then((list) => {
-      setTasks(list as unknown as TaskRecord[]);
+      setTasks(list as TaskRecord[]);
     });
   }, []);
 
@@ -73,7 +64,7 @@ export default function TasksDashboardPage() {
     if (!hasRunningTasks) return;
     const id = setInterval(() => {
       window.mupatternDesktop.tasks.listTasks().then((list) => {
-        setTasks(list as unknown as TaskRecord[]);
+        setTasks(list as TaskRecord[]);
       });
     }, 2000);
     return () => clearInterval(id);
@@ -83,11 +74,6 @@ export default function TasksDashboardPage() {
     () => (activeId ? (workspaces.find((w) => w.id === activeId) ?? null) : null),
     [activeId, workspaces],
   );
-
-  const visibleTaskKinds = useMemo(() => {
-    if (!activeWorkspace) return ["file.convert"];
-    return getVisibleTaskKinds(activeWorkspace.workspaceTags ?? []);
-  }, [activeWorkspace]);
 
   const [positionsWithBboxResolved, setPositionsWithBboxResolved] = useState<number[]>([]);
 
@@ -100,7 +86,7 @@ export default function TasksDashboardPage() {
       const results = await Promise.all(
         activeWorkspace.positions.map((pos) =>
           window.mupatternDesktop.tasks.hasBboxCsv({
-            workspacePath: activeWorkspace.rootPath!,
+            workspacePath: activeWorkspace.rootPath,
             pos,
           }),
         ),
@@ -166,208 +152,33 @@ export default function TasksDashboardPage() {
         progressUnsubscribeRef.current?.();
         progressUnsubscribeRef.current = null;
         setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-            };
-          }),
+          prev.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  status: result.ok ? "succeeded" : "failed",
+                  finished_at: new Date().toISOString(),
+                  error: result.ok ? null : result.error,
+                },
+          ),
         );
       } catch (e) {
         progressUnsubscribeRef.current?.();
         progressUnsubscribeRef.current = null;
-        setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
         setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
-      }
-    },
-    [activeWorkspace],
-  );
-
-  const handleCreateExpressionAnalyze = useCallback(
-    async (params: { workspacePath: string; pos: number; channel: number; output: string }) => {
-      if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "expression.analyze",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: params,
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setExpressionModalOpen(false);
-      setAddMenuOpen(false);
-
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onExpressionAnalyzeProgress(
-        (ev) => {
-          if (ev.taskId !== taskId) return;
-          setTasks((prev) =>
-            prev.map((t) => {
-              if (t.id !== taskId) return t;
-              return {
-                ...t,
-                progress_events: [
-                  ...t.progress_events,
-                  {
-                    progress: ev.progress,
-                    message: ev.message,
-                    timestamp: new Date().toISOString(),
-                  },
-                ],
-              };
-            }),
-          );
-        },
-      );
-
-      try {
-        const result = await window.mupatternDesktop.tasks.runExpressionAnalyze({
-          taskId,
-          ...params,
-        });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-              result: result.ok ? { output: result.output, rows: result.rows } : null,
-            };
-          }),
-        );
-      } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
-      }
-    },
-    [activeWorkspace],
-  );
-
-  const handleCreateTissueAnalyze = useCallback(
-    async (params: {
-      workspacePath: string;
-      pos: number;
-      channelPhase: number;
-      channelFluorescence: number;
-      method: string;
-      model: string;
-      output: string;
-    }) => {
-      if (!activeWorkspace?.rootPath) return;
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "tissue.analyze",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: params,
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setTissueModalOpen(false);
-      setAddMenuOpen(false);
-
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onTissueAnalyzeProgress(
-        (ev) => {
-          if (ev.taskId !== taskId) return;
-          setTasks((prev) =>
-            prev.map((t) => {
-              if (t.id !== taskId) return t;
-              return {
-                ...t,
-                progress_events: [
-                  ...t.progress_events,
-                  {
-                    progress: ev.progress,
-                    message: ev.message,
-                    timestamp: new Date().toISOString(),
-                  },
-                ],
-              };
-            }),
-          );
-        },
-      );
-
-      try {
-        const result = await window.mupatternDesktop.tasks.runTissueAnalyze({
-          taskId,
-          ...params,
-        });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-              result: result.ok ? { output: result.output, rows: result.rows } : null,
-            };
-          }),
-        );
-      } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
+          prev.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  status: "failed",
+                  finished_at: new Date().toISOString(),
+                  error: message,
+                },
+          ),
         );
       }
     },
@@ -426,31 +237,34 @@ export default function TasksDashboardPage() {
         progressUnsubscribeRef.current?.();
         progressUnsubscribeRef.current = null;
         setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-              result: result.ok ? { output: result.output, rows: result.rows } : null,
-            };
-          }),
+          prev.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  status: result.ok ? "succeeded" : "failed",
+                  finished_at: new Date().toISOString(),
+                  error: result.ok ? null : result.error,
+                  result: result.ok ? { output: result.output, rows: result.rows } : null,
+                },
+          ),
         );
       } catch (e) {
         progressUnsubscribeRef.current?.();
         progressUnsubscribeRef.current = null;
-        setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
         setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
+          prev.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  status: "failed",
+                  finished_at: new Date().toISOString(),
+                  error: message,
+                },
+          ),
         );
       }
     },
@@ -467,7 +281,6 @@ export default function TasksDashboardPage() {
       output: string;
       fps: number;
       colormap: string;
-      spots: string | null;
     }) => {
       if (!activeWorkspace?.rootPath) return;
       setError(null);
@@ -519,133 +332,132 @@ export default function TasksDashboardPage() {
         progressUnsubscribeRef.current?.();
         progressUnsubscribeRef.current = null;
         setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-            };
-          }),
+          prev.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  status: result.ok ? "succeeded" : "failed",
+                  finished_at: new Date().toISOString(),
+                  error: result.ok ? null : result.error,
+                },
+          ),
         );
       } catch (e) {
         progressUnsubscribeRef.current?.();
         progressUnsubscribeRef.current = null;
-        setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
         setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
+          prev.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  status: "failed",
+                  finished_at: new Date().toISOString(),
+                  error: message,
+                },
+          ),
         );
       }
     },
     [activeWorkspace],
   );
 
-  const handleCreateConvert = useCallback(
-    async (input: string, output: string, pos: string, time: string) => {
-      setError(null);
-      const taskId = crypto.randomUUID();
-      const task: TaskRecord = {
-        id: taskId,
-        kind: "file.convert",
-        status: "running",
-        created_at: new Date().toISOString(),
-        started_at: new Date().toISOString(),
-        finished_at: null,
-        request: { input, output, pos, time },
-        result: null,
-        error: null,
-        logs: [],
-        progress_events: [],
-      };
-      await window.mupatternDesktop.tasks.insertTask(task as unknown);
-      setTasks((prev) => [task, ...prev]);
-      setSelectedTaskId(taskId);
-      setConvertModalOpen(false);
-      setAddMenuOpen(false);
+  const handleCreateConvert = useCallback(async (input: string, output: string, pos: string, time: string) => {
+    setError(null);
+    const taskId = crypto.randomUUID();
+    const task: TaskRecord = {
+      id: taskId,
+      kind: "file.convert",
+      status: "running",
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      finished_at: null,
+      request: { input, output, pos, time },
+      result: null,
+      error: null,
+      logs: [],
+      progress_events: [],
+    };
+    await window.mupatternDesktop.tasks.insertTask(task as unknown);
+    setTasks((prev) => [task, ...prev]);
+    setSelectedTaskId(taskId);
+    setConvertModalOpen(false);
+    setAddMenuOpen(false);
 
-      progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onConvertProgress((ev) => {
-        if (ev.taskId !== taskId) return;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              progress_events: [
-                ...t.progress_events,
-                {
-                  progress: ev.progress,
-                  message: ev.message,
-                  timestamp: new Date().toISOString(),
-                },
-              ],
-            };
-          }),
-        );
+    progressUnsubscribeRef.current = window.mupatternDesktop.tasks.onConvertProgress((ev) => {
+      if (ev.taskId !== taskId) return;
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.id !== taskId) return t;
+          return {
+            ...t,
+            progress_events: [
+              ...t.progress_events,
+              {
+                progress: ev.progress,
+                message: ev.message,
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+        }),
+      );
+    });
+
+    try {
+      const result = await window.mupatternDesktop.tasks.runConvert({
+        taskId,
+        input,
+        output,
+        pos,
+        time,
       });
-
-      try {
-        const result = await window.mupatternDesktop.tasks.runConvert({
-          taskId,
-          input,
-          output,
-          pos,
-          time,
-        });
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: result.ok ? "succeeded" : "failed",
-              finished_at: new Date().toISOString(),
-              error: result.ok ? null : result.error,
-            };
-          }),
-        );
-      } catch (e) {
-        progressUnsubscribeRef.current?.();
-        progressUnsubscribeRef.current = null;
-        setError(e instanceof Error ? e.message : String(e));
-        setTasks((prev) =>
-          prev.map((t) => {
-            if (t.id !== taskId) return t;
-            return {
-              ...t,
-              status: "failed",
-              finished_at: new Date().toISOString(),
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }),
-        );
-      }
-    },
-    [],
-  );
+      progressUnsubscribeRef.current?.();
+      progressUnsubscribeRef.current = null;
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id !== taskId
+            ? t
+            : {
+                ...t,
+                status: result.ok ? "succeeded" : "failed",
+                finished_at: new Date().toISOString(),
+                error: result.ok ? null : result.error,
+              },
+        ),
+      );
+    } catch (e) {
+      progressUnsubscribeRef.current?.();
+      progressUnsubscribeRef.current = null;
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id !== taskId
+            ? t
+            : {
+                ...t,
+                status: "failed",
+                finished_at: new Date().toISOString(),
+                error: message,
+              },
+        ),
+      );
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-screen">
-      <AppHeader
-        title="Tasks"
-        backTo="/workspace"
-      />
+      <AppHeader title="Tasks" backTo="/workspace" />
 
       <div className="flex-1 min-h-0 overflow-auto">
         <div className="p-6 space-y-4">
           {!activeWorkspace ? (
             <p className="text-sm text-muted-foreground">
-              Open a workspace for Crop, Expression, Kill, and Movie. Convert works with or without
-              a workspace.
+              Open a workspace for Crop, Kill, and Movie. Convert works with or without a workspace.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -663,9 +475,8 @@ export default function TasksDashboardPage() {
                 <Plus className="size-4 mr-2" />
                 Add task
               </Button>
-            {addMenuOpen && (
-              <div className="absolute left-0 top-full mt-1 border rounded bg-background shadow-lg py-1 z-20 min-w-[120px]">
-                {visibleTaskKinds.includes("file.convert") && (
+              {addMenuOpen && (
+                <div className="absolute left-0 top-full mt-1 border rounded bg-background shadow-lg py-1 z-20 min-w-[120px]">
                   <button
                     type="button"
                     className="w-full text-left px-4 py-2 hover:bg-accent text-sm"
@@ -676,8 +487,6 @@ export default function TasksDashboardPage() {
                   >
                     Convert
                   </button>
-                )}
-                {visibleTaskKinds.includes("file.crop") && (
                   <button
                     type="button"
                     className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -690,8 +499,6 @@ export default function TasksDashboardPage() {
                   >
                     Crop
                   </button>
-                )}
-                {visibleTaskKinds.includes("file.movie") && (
                   <button
                     type="button"
                     className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -704,22 +511,6 @@ export default function TasksDashboardPage() {
                   >
                     Movie
                   </button>
-                )}
-                {visibleTaskKinds.includes("expression.analyze") && (
-                  <button
-                    type="button"
-                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!activeWorkspace}
-                    onClick={() => {
-                      if (!activeWorkspace) return;
-                      setExpressionModalOpen(true);
-                      setAddMenuOpen(false);
-                    }}
-                  >
-                    Expression
-                  </button>
-                )}
-                {visibleTaskKinds.includes("kill.predict") && (
                   <button
                     type="button"
                     className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -732,23 +523,8 @@ export default function TasksDashboardPage() {
                   >
                     Kill
                   </button>
-                )}
-                {visibleTaskKinds.includes("tissue.analyze") && (
-                  <button
-                    type="button"
-                    className="w-full text-left px-4 py-2 hover:bg-accent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!activeWorkspace}
-                    onClick={() => {
-                      if (!activeWorkspace) return;
-                      setTissueModalOpen(true);
-                      setAddMenuOpen(false);
-                    }}
-                  >
-                    Tissue
-                  </button>
-                )}
-              </div>
-            )}
+                </div>
+              )}
             </div>
             <Button
               variant="outline"
@@ -756,7 +532,7 @@ export default function TasksDashboardPage() {
               onClick={async () => {
                 await window.mupatternDesktop.tasks.deleteCompletedTasks();
                 const list = await window.mupatternDesktop.tasks.listTasks();
-                setTasks(list as unknown as TaskRecord[]);
+                setTasks(list as TaskRecord[]);
               }}
               className="border bg-white text-black hover:bg-gray-100 dark:bg-black dark:text-white dark:hover:bg-gray-900 dark:border-input disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -789,13 +565,7 @@ export default function TasksDashboardPage() {
                         <span className="text-muted-foreground text-sm">
                           {task.kind === "file.convert"
                             ? `${String(task.request?.input ?? "?")} → ${String(task.request?.output ?? "?")}`
-                            : task.kind === "expression.analyze"
-                              ? `pos ${String(task.request?.pos ?? "?")} ch${String(task.request?.channel ?? "?")} → ${String(task.request?.output ?? "?")}`
-                              : task.kind === "kill.predict"
-                                ? `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`
-                                : task.kind === "tissue.analyze"
-                                  ? `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`
-                                  : `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`}
+                            : `pos ${String(task.request?.pos ?? "?")} → ${String(task.request?.output ?? "?")}`}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -815,66 +585,17 @@ export default function TasksDashboardPage() {
                         {task.status === "succeeded" && (
                           <>
                             {task.kind === "file.convert" ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => navigate("/workspace")}
-                              >
+                              <Button variant="outline" size="sm" onClick={() => navigate("/workspace")}>
                                 Add output as workspace
-                              </Button>
-                            ) : task.kind === "expression.analyze" ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const r = task.result as {
-                                    rows?: Array<{
-                                      t: number;
-                                      crop: string;
-                                      intensity: number;
-                                      area: number;
-                                      background: number;
-                                    }>;
-                                  } | null;
-                                  navigate("/application", {
-                                    state: { expressionRows: r?.rows ?? null },
-                                  });
-                                }}
-                              >
-                                View in Application
                               </Button>
                             ) : task.kind === "kill.predict" ? (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  const r = task.result as {
-                                    rows?: Array<{ t: number; crop: string; label: boolean }>;
-                                  } | null;
+                                  const result = task.result as { rows?: KillRow[] } | null;
                                   navigate("/application", {
-                                    state: { killRows: r?.rows ?? null },
-                                  });
-                                }}
-                              >
-                                View in Application
-                              </Button>
-                            ) : task.kind === "tissue.analyze" ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const r = task.result as {
-                                    rows?: Array<{
-                                      t: number;
-                                      crop: string;
-                                      cell: number;
-                                      total_fluorescence: number;
-                                      cell_area: number;
-                                      background: number;
-                                    }>;
-                                  } | null;
-                                  navigate("/application", {
-                                    state: { tissueRows: r?.rows ?? null },
+                                    state: { killRows: result?.rows ?? null },
                                   });
                                 }}
                               >
@@ -945,26 +666,12 @@ export default function TasksDashboardPage() {
             workspace={activeWorkspace}
             onCreate={handleCreateMovie}
           />
-          <ExpressionTaskConfigModal
-            key={`expression-${activeWorkspace.id}`}
-            open={expressionModalOpen}
-            onClose={() => setExpressionModalOpen(false)}
-            workspace={activeWorkspace}
-            onCreate={handleCreateExpressionAnalyze}
-          />
           <KillTaskConfigModal
             key={`kill-${activeWorkspace.id}`}
             open={killModalOpen}
             onClose={() => setKillModalOpen(false)}
             workspace={activeWorkspace}
             onCreate={handleCreateKillPredict}
-          />
-          <TissueTaskConfigModal
-            key={`tissue-${activeWorkspace.id}`}
-            open={tissueModalOpen}
-            onClose={() => setTissueModalOpen(false)}
-            workspace={activeWorkspace}
-            onCreate={handleCreateTissueAnalyze}
           />
         </>
       )}

@@ -27,7 +27,6 @@ interface MovieTaskConfigModalProps {
     output: string;
     fps: number;
     colormap: string;
-    spots: string | null;
   }) => void;
 }
 
@@ -60,7 +59,6 @@ export function MovieTaskConfigModal({
   }, [open, defaultOutput]);
   const [fps, setFps] = useState(10);
   const [colormap, setColormap] = useState("grayscale");
-  const [spots, setSpots] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !rootPath) return;
@@ -108,11 +106,6 @@ export function MovieTaskConfigModal({
     if (result) setOutput(result.path);
   }, []);
 
-  const handleBrowseSpots = useCallback(async () => {
-    const result = await window.mupatternDesktop.tasks.pickSpotsFile();
-    if (result) setSpots(result.path);
-  }, []);
-
   const handleCreate = useCallback(() => {
     onCreate({
       input_zarr: inputZarr,
@@ -123,10 +116,9 @@ export function MovieTaskConfigModal({
       output,
       fps,
       colormap,
-      spots,
     });
     onClose();
-  }, [inputZarr, pos, crop, channel, time, output, fps, colormap, spots, onCreate, onClose]);
+  }, [inputZarr, pos, crop, channel, time, output, fps, colormap, onCreate, onClose]);
 
   const canCreate =
     rootPath &&
@@ -243,21 +235,6 @@ export function MovieTaskConfigModal({
                   <option value="hot">Hot</option>
                   <option value="viridis">Viridis</option>
                 </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Spots CSV (optional)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    className="flex-1 border rounded px-3 py-2 bg-background text-sm"
-                    value={spots ?? ""}
-                    onChange={(e) => setSpots(e.target.value || null)}
-                    placeholder="t,crop,spot,y,x"
-                  />
-                  <Button variant="outline" size="sm" onClick={handleBrowseSpots}>
-                    Browse
-                  </Button>
-                </div>
               </div>
             </>
           )}

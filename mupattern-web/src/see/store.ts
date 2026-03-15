@@ -15,8 +15,6 @@ export {
   setSeeContrast as setContrast,
   setSeeAnnotating as setAnnotating,
   setSeeSelectedPositions as setSelectedPositions,
-  setSeeSpots as setSpots,
   setSeeShowAnnotations as setShowAnnotations,
-  setSeeShowSpots as setShowSpots,
   getSeeAnnotationsMap as getAnnotationsMap,
 } from "@/store/mupattern-store";

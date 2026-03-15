@@ -1,15 +1,15 @@
 # mupattern
 
-End-to-end pipeline for high-throughput single-cell analysis on micropatterns: killing assays, fluorescence dynamics, and subcellular feature detection.
+End-to-end pipeline for high-throughput single-cell killing assays on micropatterns.
 
 **Web app:** [mupattern-e4fec.web.app](https://mupattern-e4fec.web.app)
 
 ## Overview
 
-- **mupattern-desktop** (Electron/React): Full workspace for multi-position datasets. Uses mupattern-rs for crop, kill, movie, expression, tissue, spot.
+- **mupattern-desktop** (Electron/React): Full workspace for multi-position killing-assay datasets. Uses mupattern-rs for convert, crop, kill, and movie.
 - **mupattern-web** (React): Lightweight web app for pattern registration (`/tools` → Register) and crop viewing (`/tools` → See).
-- **mupattern-rs** (Rust): Production CLI (convert, crop, expression, kill, movie, spot, tissue), used by the desktop app.
-- **mupattern-py** (Python): Reference CLI + ML training/inference (convert, crop, kill, train, etc.).
+- **mupattern-rs** (Rust): Production CLI (convert, crop, kill, movie), used by the desktop app.
+- **mupattern-py** (Python): Reference CLI + kill-model training/inference (convert, crop, movie, kill, plot kill, train kill, dataset kill).
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ End-to-end pipeline for high-throughput single-cell analysis on micropatterns: k
 - [Rust](https://www.rust-lang.org/) — mupattern-rs and for building the desktop app
 - [uv](https://docs.astral.sh/uv/) — Python CLI (mupattern-py, requires Python 3.12+)
 
-Optional: [FFmpeg](https://ffmpeg.org/) (for movie export), Nikon ND2 or TIFF input data. For GPU acceleration in ONNX Runtime (kill, tissue, spot): install [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.9 and [cuDNN](https://developer.nvidia.com/cudnn).
+Optional: [FFmpeg](https://ffmpeg.org/) (for movie export), Nikon ND2 or TIFF input data. For GPU acceleration in ONNX Runtime kill inference, install [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 12.9 and [cuDNN](https://developer.nvidia.com/cudnn).
 
 ## Quick Start
 
@@ -46,7 +46,7 @@ Output goes to `release/` (at repo root). The `mupattern` binary is bundled from
 
 ## Python CLI
 
-The `mupattern-py` package is a reference implementation for convert, crop, movie, expression, kill, spot, tissue, plot, train, and dataset. Run from repo root:
+The `mupattern-py` package is a reference implementation for convert, crop, movie, kill, plot, train, and dataset. Run from repo root:
 
 ```bash
 uv run mupattern --help
@@ -56,7 +56,7 @@ Production workloads use mupattern-desktop with the Rust backend and ONNX.
 
 ## Rust CLI
 
-- **mupattern-rs** — production CLI: convert, crop, expression, kill, movie, spot, tissue. Used by the desktop app.
+- **mupattern-rs** — production CLI: convert, crop, kill, movie. Used by the desktop app.
 
 ```bash
 cargo run -p mupattern-rs --release -- --help
@@ -67,9 +67,8 @@ cargo run -p mupattern-rs --release -- --help
 1. **Convert**: ND2 → TIFF folders
 2. **Register**: Align grid, define crop regions (Web or Desktop)
 3. **Crop**: Extract pattern sites into Zarr
-4. **Analyze** (parallel paths):
+4. **Analyze**:
    - **Kill**: Annotate (label cells in See) → Train (ResNet-18) → Survival predictions
-   - **Expression, Tissue, Spot**: Fluorescence and spot analysis
 
 ## Tech Stack
 

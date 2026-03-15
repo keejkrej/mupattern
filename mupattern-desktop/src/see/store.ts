@@ -3,10 +3,6 @@ import { createPersistedStore } from "@mupattern/shared/lib/persist";
 export interface ViewerState {
   /** Annotations as [key, value] pairs (Map can't be JSON-serialized directly) */
   annotations: [string, boolean][];
-  /** Spots as [key, spots[]] pairs keyed by "t:cropId" */
-  spots: [string, { y: number; x: number }[]][];
-  /** Absolute path to loaded masks zarr folder (e.g. .../masks_fl.zarr), or null if not loaded */
-  masksPath: string | null;
   selectedPos: string;
   t: number;
   c: number;
@@ -16,16 +12,12 @@ export interface ViewerState {
   contrastMax: number;
   annotating: boolean;
   showAnnotations: boolean;
-  showSpots: boolean;
-  showMasks: boolean;
   /** Which positions were selected in the picker (for auto-reload) */
   selectedPositions: string[];
 }
 
 const defaultState: ViewerState = {
   annotations: [],
-  spots: [],
-  masksPath: null,
   selectedPos: "",
   t: 0,
   c: 0,
@@ -35,8 +27,6 @@ const defaultState: ViewerState = {
   contrastMax: 65535,
   annotating: false,
   showAnnotations: true,
-  showSpots: true,
-  showMasks: true,
   selectedPositions: [],
 };
 
@@ -89,27 +79,8 @@ export function setSelectedPositions(selectedPositions: string[]) {
   viewerStore.setState((s) => ({ ...s, selectedPositions }));
 }
 
-export function setSpots(spots: Map<string, { y: number; x: number }[]>) {
-  viewerStore.setState((s) => ({
-    ...s,
-    spots: [...spots.entries()],
-  }));
-}
-
 export function setShowAnnotations(showAnnotations: boolean) {
   viewerStore.setState((s) => ({ ...s, showAnnotations }));
-}
-
-export function setShowSpots(showSpots: boolean) {
-  viewerStore.setState((s) => ({ ...s, showSpots }));
-}
-
-export function setShowMasks(showMasks: boolean) {
-  viewerStore.setState((s) => ({ ...s, showMasks }));
-}
-
-export function setMasksPath(masksPath: string | null) {
-  viewerStore.setState((s) => ({ ...s, masksPath }));
 }
 
 // --- Helpers ---

@@ -5,8 +5,6 @@ import {
   Crop,
   BarChart3,
   Crosshair,
-  CircleDot,
-  Layers,
   ArrowDown,
   Download,
   Globe,
@@ -54,35 +52,30 @@ const FEATURES = [
     desc: "Auto-detect and extract micropattern regions of interest from full-frame images.",
   },
   {
-    icon: BarChart3,
-    title: "Expression",
-    desc: "Quantify fluorescence intensity across patterns over time with background correction.",
-  },
-  {
     icon: Crosshair,
     title: "Kill",
-    desc: "Detect cell death events using deep learning with monotonicity correction.",
+    desc: "Label cells in See, train a kill model, and run monotonicity-cleaned death predictions.",
   },
   {
-    icon: CircleDot,
-    title: "Spot",
-    desc: "Identify and count fluorescent spots per cell with sub-pixel accuracy.",
+    icon: BarChart3,
+    title: "Review",
+    desc: "Inspect kill curves and death-time distributions directly in the desktop application.",
   },
   {
-    icon: Layers,
-    title: "Tissue",
-    desc: "Segment tissue morphology with Cellpose and CellSAM for comprehensive cell analysis.",
+    icon: Download,
+    title: "Movie",
+    desc: "Export kill-assay crops as movies for presentation, QA, and manual review.",
   },
 ] as const;
 
 const PIPELINE = [
   { n: 1, title: "Import", desc: "Point to your TIFF stacks. Multi-position, multi-channel, time-lapse — all supported." },
   { n: 2, title: "Crop", desc: "Automatic micropattern region extraction into Zarr v3. No manual ROI selection." },
-  { n: 3, title: "Analyze", desc: "Run expression, kill, spot, or tissue pipelines — powered by ONNX inference on your hardware." },
-  { n: 4, title: "Results", desc: "Export clean CSVs with per-crop, per-timepoint measurements. Ready for plotting and publication." },
+  { n: 3, title: "Annotate", desc: "Label alive and dead crops in See, then train or apply the kill model with ONNX inference on your hardware." },
+  { n: 4, title: "Results", desc: "Export kill predictions, review kill curves, and generate movies for presentation or QA." },
 ] as const;
 
-const TECH = ["Rust", "ONNX Runtime", "Zarr v3", "Cellpose", "CellSAM", "TypeScript", "Electron"];
+const TECH = ["Rust", "ONNX Runtime", "Zarr v3", "TypeScript", "Electron"];
 
 /* ── Helpers ───────────────────────────────────────── */
 
@@ -193,30 +186,24 @@ function PipelineStep({
 /* ── Mock window data ──────────────────────────────── */
 
 const MOCK_CROPS = [
-  { b: 0.85, spots: 4, alive: true,  int: 1089, area: 115 },
-  { b: 0.35, spots: 0, alive: true,  int: 421,  area: 85  },
-  { b: 0.70, spots: 8, alive: true,  int: 945,  area: 108 },
-  { b: 0.60, spots: 0, alive: true,  int: 734,  area: 98  },
-  { b: 0.15, spots: 0, alive: false, int: 156,  area: 72  },
-  { b: 0.90, spots: 2, alive: true,  int: 1367, area: 118 },
-  { b: 0.40, spots: 0, alive: true,  int: 445,  area: 82  },
-  { b: 0.75, spots: 5, alive: true,  int: 892,  area: 105 },
-  { b: 0.55, spots: 3, alive: true,  int: 723,  area: 96  },
-  { b: 0.30, spots: 0, alive: true,  int: 312,  area: 78  },
-  { b: 0.80, spots: 3, alive: true,  int: 1205, area: 112 },
-  { b: 0.45, spots: 0, alive: true,  int: 534,  area: 88  },
-  { b: 0.90, spots: 1, alive: true,  int: 1298, area: 121 },
-  { b: 0.10, spots: 0, alive: false, int: 89,   area: 65  },
-  { b: 0.65, spots: 1, alive: true,  int: 689,  area: 95  },
-  { b: 0.50, spots: 0, alive: true,  int: 578,  area: 91  },
-  { b: 0.70, spots: 6, alive: true,  int: 876,  area: 102 },
-  { b: 0.20, spots: 0, alive: false, int: 201,  area: 70  },
-];
-
-const SPOT_XY = [
-  [32, 28], [58, 38], [38, 62], [62, 28], [28, 48],
-  [52, 58], [42, 32], [58, 52], [35, 42], [55, 68],
-  [48, 25], [65, 42],
+  { b: 0.85, alive: true, int: 1089, area: 115 },
+  { b: 0.35, alive: true, int: 421, area: 85 },
+  { b: 0.70, alive: true, int: 945, area: 108 },
+  { b: 0.60, alive: true, int: 734, area: 98 },
+  { b: 0.15, alive: false, int: 156, area: 72 },
+  { b: 0.90, alive: true, int: 1367, area: 118 },
+  { b: 0.40, alive: true, int: 445, area: 82 },
+  { b: 0.75, alive: true, int: 892, area: 105 },
+  { b: 0.55, alive: true, int: 723, area: 96 },
+  { b: 0.30, alive: true, int: 312, area: 78 },
+  { b: 0.80, alive: true, int: 1205, area: 112 },
+  { b: 0.45, alive: true, int: 534, area: 88 },
+  { b: 0.90, alive: true, int: 1298, area: 121 },
+  { b: 0.10, alive: false, int: 89, area: 65 },
+  { b: 0.65, alive: true, int: 689, area: 95 },
+  { b: 0.50, alive: true, int: 578, area: 91 },
+  { b: 0.70, alive: true, int: 876, area: 102 },
+  { b: 0.20, alive: false, int: 201, area: 70 },
 ];
 
 /** Interactive mock app window */
@@ -291,21 +278,6 @@ function MockWindow() {
                       }}
                     />
                   </div>
-
-                  {/* Red spots */}
-                  {c.spots > 0 &&
-                    SPOT_XY.slice(0, c.spots).map((_, si) => (
-                      <div
-                        key={si}
-                        className="absolute size-[5px] rounded-full"
-                        style={{
-                          left: `${SPOT_XY[(si + i * 3) % SPOT_XY.length][0]}%`,
-                          top: `${SPOT_XY[(si + i * 3) % SPOT_XY.length][1]}%`,
-                          background: "radial-gradient(circle, rgba(239,68,68,0.9) 0%, rgba(239,68,68,0.3) 100%)",
-                        }}
-                      />
-                    ))}
-
                   {/* Intensity bar */}
                   <div className="absolute bottom-0 inset-x-0 h-[3px] bg-white/[0.04]">
                     <div
@@ -338,7 +310,6 @@ function MockWindow() {
                 {([
                   ["intensity", sel.int + tpOffset * 3],
                   ["area", `${sel.area} px\u00B2`],
-                  ["spots", sel.spots],
                   ["background", Math.round(42 + tpOffset * 0.8)],
                 ] as const).map(([label, val]) => (
                   <div key={label} className="flex justify-between">
@@ -377,8 +348,6 @@ function MockWindow() {
         <span>{MOCK_CROPS.filter((c) => c.alive).length} alive</span>
         <span className="text-muted-foreground/35">·</span>
         <span>{MOCK_CROPS.filter((c) => !c.alive).length} dead</span>
-        <span className="text-muted-foreground/35">·</span>
-        <span>{MOCK_CROPS.filter((c) => c.spots > 0).length} with spots</span>
       </div>
     </div>
   );

@@ -27,30 +27,18 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
   zarr: {
     discover: (request: unknown) => ipcRenderer.invoke("zarr:discover", request),
     loadFrame: (request: unknown) => ipcRenderer.invoke("zarr:load-frame", request),
-    hasMasks: (request: unknown) => ipcRenderer.invoke("zarr:has-masks", request),
-    loadMaskFrame: (request: unknown) => ipcRenderer.invoke("zarr:load-mask-frame", request),
-    pickMasksDirectory: () =>
-      ipcRenderer.invoke("zarr:pick-masks-dir") as Promise<{ path: string } | null>,
   },
   tasks: {
     pickCropsDestination: () =>
       ipcRenderer.invoke("tasks:pick-crops-destination") as Promise<{ path: string } | null>,
-    pickExpressionOutput: (suggestedPath?: string) =>
-      ipcRenderer.invoke("tasks:pick-expression-output", suggestedPath) as Promise<{
-        path: string;
-      } | null>,
-    pickTissueModel: () =>
-      ipcRenderer.invoke("tasks:pick-tissue-model") as Promise<{ path: string } | null>,
-    pickTissueOutput: (suggestedPath?: string) =>
-      ipcRenderer.invoke("tasks:pick-tissue-output", suggestedPath) as Promise<{
+    pickKillOutput: (suggestedPath?: string) =>
+      ipcRenderer.invoke("tasks:pick-kill-output", suggestedPath) as Promise<{
         path: string;
       } | null>,
     pickKillModel: () =>
       ipcRenderer.invoke("tasks:pick-kill-model") as Promise<{ path: string } | null>,
     pickMovieOutput: () =>
       ipcRenderer.invoke("tasks:pick-movie-output") as Promise<{ path: string } | null>,
-    pickSpotsFile: () =>
-      ipcRenderer.invoke("tasks:pick-spots-file") as Promise<{ path: string } | null>,
     pickND2Input: () =>
       ipcRenderer.invoke("tasks:pick-nd2-input") as Promise<{ path: string } | null>,
     pickConvertOutput: () =>
@@ -92,43 +80,6 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
       ipcRenderer.on("tasks:convert-progress", fn);
       return () => ipcRenderer.removeListener("tasks:convert-progress", fn);
     },
-    runExpressionAnalyze: (payload: {
-      taskId: string;
-      workspacePath: string;
-      pos: number;
-      channel: number;
-      output: string;
-    }) => ipcRenderer.invoke("tasks:run-expression-analyze", payload),
-    onExpressionAnalyzeProgress: (
-      callback: (ev: { taskId: string; progress: number; message: string }) => void,
-    ) => {
-      const fn = (
-        _event: Electron.IpcRendererEvent,
-        ev: { taskId: string; progress: number; message: string },
-      ) => callback(ev);
-      ipcRenderer.on("tasks:expression-analyze-progress", fn);
-      return () => ipcRenderer.removeListener("tasks:expression-analyze-progress", fn);
-    },
-    runTissueAnalyze: (payload: {
-      taskId: string;
-      workspacePath: string;
-      pos: number;
-      channelPhase: number;
-      channelFluorescence: number;
-      method: string;
-      model: string;
-      output: string;
-    }) => ipcRenderer.invoke("tasks:run-tissue-analyze", payload),
-    onTissueAnalyzeProgress: (
-      callback: (ev: { taskId: string; progress: number; message: string }) => void,
-    ) => {
-      const fn = (
-        _event: Electron.IpcRendererEvent,
-        ev: { taskId: string; progress: number; message: string },
-      ) => callback(ev);
-      ipcRenderer.on("tasks:tissue-analyze-progress", fn);
-      return () => ipcRenderer.removeListener("tasks:tissue-analyze-progress", fn);
-    },
     runKillPredict: (payload: {
       taskId: string;
       workspacePath: string;
@@ -157,7 +108,6 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
       output: string;
       fps: number;
       colormap: string;
-      spots: string | null;
     }) => ipcRenderer.invoke("tasks:run-movie", payload),
     onMovieProgress: (
       callback: (ev: { taskId: string; progress: number; message: string }) => void,
@@ -176,24 +126,6 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
     deleteCompletedTasks: () => ipcRenderer.invoke("tasks:delete-completed-tasks"),
   },
   application: {
-    listExpressionCsv: (workspacePath: string) =>
-      ipcRenderer.invoke("application:list-expression-csv", workspacePath) as Promise<
-        Array<{ posId: string; path: string }>
-      >,
-    loadExpressionCsv: (path: string) =>
-      ipcRenderer.invoke("application:load-expression-csv", path) as Promise<
-        | {
-            ok: true;
-            rows: Array<{
-              t: number;
-              crop: string;
-              intensity: number;
-              area: number;
-              background: number;
-            }>;
-          }
-        | { ok: false; error: string }
-      >,
     listKillCsv: (workspacePath: string) =>
       ipcRenderer.invoke("application:list-kill-csv", workspacePath) as Promise<
         Array<{ posId: string; path: string }>
@@ -201,25 +133,6 @@ contextBridge.exposeInMainWorld("mupatternDesktop", {
     loadKillCsv: (path: string) =>
       ipcRenderer.invoke("application:load-kill-csv", path) as Promise<
         | { ok: true; rows: Array<{ t: number; crop: string; label: boolean }> }
-        | { ok: false; error: string }
-      >,
-    listTissueCsv: (workspacePath: string) =>
-      ipcRenderer.invoke("application:list-tissue-csv", workspacePath) as Promise<
-        Array<{ posId: string; path: string }>
-      >,
-    loadTissueCsv: (path: string) =>
-      ipcRenderer.invoke("application:load-tissue-csv", path) as Promise<
-        | {
-            ok: true;
-            rows: Array<{
-              t: number;
-              crop: string;
-              cell: number;
-              total_fluorescence: number;
-              cell_area: number;
-              background: number;
-            }>;
-          }
         | { ok: false; error: string }
       >,
   },

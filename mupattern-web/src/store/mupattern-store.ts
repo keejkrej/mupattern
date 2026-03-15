@@ -53,7 +53,6 @@ const defaultRegister: RegisterState = {
 
 export interface SeeState {
   annotations: [string, boolean][];
-  spots: [string, { y: number; x: number }[]][];
   selectedPos: string;
   t: number;
   c: number;
@@ -63,13 +62,11 @@ export interface SeeState {
   contrastMax: number;
   annotating: boolean;
   showAnnotations: boolean;
-  showSpots: boolean;
   selectedPositions: string[];
 }
 
 const defaultSee: SeeState = {
   annotations: [],
-  spots: [],
   selectedPos: "",
   t: 0,
   c: 0,
@@ -79,7 +76,6 @@ const defaultSee: SeeState = {
   contrastMax: 65535,
   annotating: false,
   showAnnotations: true,
-  showSpots: true,
   selectedPositions: [],
 };
 
@@ -310,27 +306,10 @@ export function setSeeSelectedPositions(selectedPositions: string[]) {
   }));
 }
 
-export function setSeeSpots(spots: Map<string, { y: number; x: number }[]>) {
-  mupatternStore.setState((s) => ({
-    ...s,
-    see: {
-      ...s.see,
-      spots: [...spots.entries()],
-    },
-  }));
-}
-
 export function setSeeShowAnnotations(showAnnotations: boolean) {
   mupatternStore.setState((s) => ({
     ...s,
     see: { ...s.see, showAnnotations },
-  }));
-}
-
-export function setSeeShowSpots(showSpots: boolean) {
-  mupatternStore.setState((s) => ({
-    ...s,
-    see: { ...s.see, showSpots },
   }));
 }
 

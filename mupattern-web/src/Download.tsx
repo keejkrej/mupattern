@@ -26,8 +26,8 @@ export default function DownloadPage() {
               Desktop app (Electron)
             </p>
             <p className="text-sm text-muted-foreground max-w-3xl">
-              Full workspace for multi-position datasets: convert, register, crop, expression, kill,
-              movie, tissue, spot. Windows installer is built via GitHub Actions on release.
+              Full workspace for multi-position killing-assay datasets: convert, register, crop,
+              kill, and movie. Windows installer is built via GitHub Actions on release.
             </p>
             <a href={MUPATTERN_DESKTOP_URL} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" className="gap-2">
@@ -44,7 +44,8 @@ export default function DownloadPage() {
               CLI (mupattern)
             </p>
             <p className="text-sm text-muted-foreground max-w-3xl">
-              `mupattern` CLI (convert, crop, expression, kill, movie, spot, tissue). For the web workflow, use the `crop` subcommand.
+              `mupattern` CLI (convert, crop, kill, movie). For the web workflow, use the `crop`
+              subcommand.
             </p>
             <a href={MUPATTERN_CLI_URL} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" className="gap-2">

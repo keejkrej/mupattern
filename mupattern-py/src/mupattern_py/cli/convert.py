@@ -14,6 +14,7 @@ from ..apps.convert.core import run_convert
 app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
+    rich_markup_mode=None,
     help="Convert ND2 file into per-position TIFF folders.",
 )
 

@@ -25,8 +25,6 @@ pub struct MovieArgs {
     #[arg(long, default_value = "grayscale")]
     pub colormap: String,
     #[arg(long)]
-    pub spots: Option<String>,
-    #[arg(long)]
     pub ffmpeg: String,
 }
 

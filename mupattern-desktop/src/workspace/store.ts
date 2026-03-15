@@ -1,6 +1,6 @@
 import { Store } from "@tanstack/store";
 import { parseSliceStringOverValues } from "@/lib/slices";
-import { ASSAY_TAGS, type WorkspaceAssayType } from "@/lib/workspace-tags";
+import { ASSAY_TAGS } from "@/lib/workspace-tags";
 
 /** Single workspace backed by a parent folder with Pos{N}/ subdirectories. */
 export interface PositionTag {
@@ -113,11 +113,11 @@ function normalizeWorkspace(workspace: Workspace): Workspace {
   );
 
   const workspaceTagsRaw = (workspace as unknown as Record<string, unknown>).workspaceTags;
-  const validTypes = new Set<WorkspaceAssayType>(["free", ...ASSAY_TAGS]);
+  const validTypes = new Set<string>(ASSAY_TAGS);
   const workspaceTags = (() => {
     if (!Array.isArray(workspaceTagsRaw) || workspaceTagsRaw.length === 0) return [];
     const first = String(workspaceTagsRaw[0] ?? "").trim();
-    if (first === "free" || !validTypes.has(first as WorkspaceAssayType)) return [];
+    if (!validTypes.has(first)) return [];
     if (ASSAY_TAGS.includes(first as (typeof ASSAY_TAGS)[number])) return [first];
     return [];
   })();

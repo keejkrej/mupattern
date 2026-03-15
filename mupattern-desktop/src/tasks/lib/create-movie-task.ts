@@ -28,7 +28,6 @@ export interface CreateMovieParams {
   output: string;
   fps: number;
   colormap: string;
-  spots: string | null;
 }
 
 export async function createMovieTask(params: CreateMovieParams): Promise<void> {

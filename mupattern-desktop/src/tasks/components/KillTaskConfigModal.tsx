@@ -70,7 +70,7 @@ export function KillTaskConfigModal({
   }, []);
 
   const handleBrowseOutput = useCallback(async () => {
-    const result = await window.mupatternDesktop.tasks.pickExpressionOutput(output);
+    const result = await window.mupatternDesktop.tasks.pickKillOutput(output);
     if (result) setOutput(result.path);
   }, [output]);
 

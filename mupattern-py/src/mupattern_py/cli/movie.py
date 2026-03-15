@@ -36,15 +36,11 @@ def movie(
         Literal["grayscale", "hot", "viridis"],
         typer.Option(help='Colormap: "grayscale", "hot", or "viridis".'),
     ] = "grayscale",
-    spots: Annotated[
-        Path | None,
-        typer.Option("--spots", exists=True, dir_okay=False, help="Optional spots CSV (t,crop,spot,y,x) to overlay."),
-    ] = None,
 ) -> None:
     """Create a movie from a zarr crop."""
     try:
         run_movie(
-            input, pos, crop, channel, time, output, fps, colormap, spots,
+            input, pos, crop, channel, time, output, fps, colormap,
             on_progress=progress_json_stderr,
         )
     except ValueError as e:
